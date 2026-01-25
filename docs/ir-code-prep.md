@@ -1,71 +1,119 @@
-# IR Code Preparation (SmartIR → Tuya MQTT)
+# IR Code Import Guide
 
-This document explains how we prepare IR code files for use with this project. It covers where the codes come from, why we convert them, the devices involved, the key technical concepts, and the exact workflow to regenerate or extend the Tuya-formatted code files.
+This document explains how to import SmartIR IR code files into the HVAC Manager database. The system automatically handles format conversion, so you can directly import files from the SmartIR project.
 
-## Context
-- Original code files contain IR codes for selected Daikin HVAC models that were verified compatible with our use case. Only the relevant models were kept locally.
-- These model code files were retrieved from the SmartIR project for Home Assistant.
-  - SmartIR repository: https://github.com/smartHomeHub/SmartIR
-  - The repo maintains a large catalog of climate IR code maps (by manufacturer / model) under `codes/`.
-- Our project does not depend on the Home Assistant integration itself; we only re-use the IR code maps as a source dataset.
+## Quick Start
 
-## Why convert to Tuya format?
-- We use generic Tuya-compatible IR blasters (AliExpress model "ZS06" / universal IR remote) to transmit the HVAC commands.
-  - Example reference listing (stable item id): https://www.aliexpress.com/item/1005003878194474.html
-- SmartIR stores many codes in Broadlink’s raw format (base64-encoded). Tuya IR blasters, however, expect a Tuya "raw" timing stream, typically compressed with Tuya’s LZ-style codec.
-- Therefore, we convert the SmartIR Broadlink-encoded payloads into Tuya-compressed payloads that the IR blaster will publish/transmit via MQTT.
-
-## Converter script and provenance
-- The Python converter used in this repo is at:
-  - `docs/smartir/reference/broadlink_to_tuya.py`
-- It is based on community work that documents Tuya’s IR compression format and provides a converter from Broadlink timing payloads to Tuya’s stream:
-  - "Tuya IR codec" reference: https://gist.github.com/mildsunrise/1d576669b63a260d2cff35fda63ec0b5
-  - Converter example (Broadlink → Tuya): https://gist.github.com/svyatogor/7839d00303998a9fa37eb48494dd680f
-  - Alternate implementation with attribution: https://gist.github.com/vills/590c154b377ac50acab079328e4ddaf9
-
-## Technical background (concise)
-- IR basics: A raw IR command is a sequence of alternating mark (carrier ON) and space (carrier OFF) durations, measured in microseconds. Protocols like NEC or Daikin define how those durations encode bits, headers, and repeats. Here we handle raw durations only, not protocol semantics.
-- Broadlink representation: Durations are stored in vendor-specific "ticks". The commonly used conversion is ~32.84 µs per tick (constant `BRDLNK_UNIT = 269/8192 ms ≈ 0.03284 ms`). Broadlink payloads store durations as 8-bit values, with an escape `0x00` prefix for 16-bit big‑endian extended durations.
-- Tuya "raw" + compression: Tuya expects a byte stream of 16-bit little‑endian durations. To reduce size, Tuya applies an LZ‑style codec with:
-  - Sliding window `W = 2^13 = 8192` bytes
-  - Maximum match length `L = 256 + 9 = 265`
-  - Two token types: literal blocks (up to 32 bytes), and length‑distance matches (distance in 13 bits; length encoded as `(len-2)`, with an extra byte for `len ≥ 10`).
-- Practical constraints:
-  - Durations must fit in 16‑bit unsigned (`< 65535`) when packed for Tuya.
-  - Carrier frequency (e.g., 38 kHz) is implicit; only durations are transmitted.
-
-## Conversion pipeline (how it works)
-1. Take a SmartIR code file (Broadlink base64 IR payloads) and parse the Broadlink payload into a list of durations (in ticks), expanding any `0x00` extended tokens.
-2. Convert Broadlink ticks to timing quanta using `ceil(value / BRDLNK_UNIT)`, producing a list of unsigned 16‑bit durations.
-3. Pack each duration as little‑endian 16‑bit and concatenate into a raw byte stream.
-4. Compress the stream with the Tuya LZ‑style codec (literal blocks + length‑distance tokens).
-5. Base64‑encode the compressed Tuya payload for transport/publishing (e.g., via MQTT).
-
-## Running the converter
-- The script rewrites the `commands` in a SmartIR JSON to Tuya format and sets metadata (`supportedController=MQTT`, `commandsEncoding=Raw`).
-- Example usage from the repo root:
-
+### Import all reference files
 ```bash
-python3 docs/smartir/reference/broadlink_to_tuya.py docs/smartir/reference/1116.json > docs/smartir/reference/1116_tuya.json
+make db-load
 ```
 
-- You can run the same for other code files you added under `docs/smartir/reference/`.
+### Import from a custom directory
+```bash
+make db-import DIR=/path/to/smartir/files
+```
 
-## Files in this repo related to codes
-- SmartIR-derived inputs and Tuya outputs live under:
-  - `docs/smartir/reference/1109.json` and `docs/smartir/reference/1109_tuya.json`
-  - `docs/smartir/reference/1116.json` and `docs/smartir/reference/1116_tuya.json`
-  - Converter: `docs/smartir/reference/broadlink_to_tuya.py`
+### Import a single model file
+```bash
+make db-import-model FILE=docs/smartir/reference/1109.json
+```
 
-## Extending this preparation step
-- Add more SmartIR code files: Place relevant model files (from https://github.com/smartHomeHub/SmartIR/tree/master/codes) into `docs/smartir/reference/`.
-- Run the converter to generate the corresponding `_tuya.json` files.
-- Keep this step scoped as a preparatory/asset‑generation process.
+## About SmartIR Files
 
-## References
-- SmartIR (source of code maps): https://github.com/smartHomeHub/SmartIR
-- Tuya IR codec notes and Python reference: https://gist.github.com/mildsunrise/1d576669b63a260d2cff35fda63ec0b5
-- Broadlink → Tuya converter examples:
-  - https://gist.github.com/svyatogor/7839d00303998a9fa37eb48494dd680f
-  - https://gist.github.com/vills/590c154b377ac50acab079328e4ddaf9
-- ZS06 IR blaster (example listing): https://www.aliexpress.com/item/1005003878194474.html
+### Source
+SmartIR is a Home Assistant project that maintains a catalog of IR codes for various climate devices:
+- Repository: https://github.com/smartHomeHub/SmartIR
+- IR codes are located in the `codes/climate/` directory
+- Each file represents one AC model with all its control combinations
+
+### Supported Formats
+
+The loader automatically detects and handles both formats:
+
+1. **Broadlink format** (original SmartIR files)
+   - `commandsEncoding: "Base64"`
+   - `supportedController: "Broadlink"`
+   - IR codes use Broadlink's proprietary encoding
+   - Files typically named: `1109.json`
+
+2. **Tuya format** (pre-converted files)
+   - `commandsEncoding: "Raw"`
+   - `supportedController: "MQTT"`
+   - IR codes use Tuya LZ-compressed format
+   - Files typically named: `1109_tuya.json`
+
+**When importing Broadlink files, the loader automatically converts them to Tuya format during database insertion.**
+
+## Adding New Models
+
+1. Find the model in SmartIR repository:
+   ```bash
+   # Browse available models
+   https://github.com/smartHomeHub/SmartIR/tree/master/codes/climate
+   ```
+
+2. Download the JSON file for your AC model
+
+3. Place it in your reference directory (or use directly)
+
+4. Import it:
+   ```bash
+   # Using db-import-model
+   make db-import-model FILE=/path/to/new-model.json
+   
+   # Or place in docs/smartir/reference/ and run
+   make db-load
+   ```
+
+The database will automatically:
+- Detect the file format
+- Convert Broadlink codes to Tuya if needed
+- Store the IR codes with proper indexing
+- Handle duplicate imports gracefully (UPSERT)
+
+## Hardware Compatibility
+
+This project uses Tuya-compatible Zigbee IR blasters:
+- **Model:** ZS06 Universal IR Remote
+- **Reference:** https://www.aliexpress.com/item/1005003878194474.html
+- **Integration:** Via Zigbee2MQTT
+
+The Tuya format is required for these devices to correctly transmit IR signals.
+
+## Conversion Details
+
+For technical details about the Broadlink-to-Tuya conversion algorithm, see:
+- [internal/database/README.md](../internal/database/README.md) - Implementation overview
+- [internal/database/tuya_codec.go](../internal/database/tuya_codec.go) - Compression algorithm
+- [internal/database/converter.go](../internal/database/converter.go) - Conversion logic
+
+### Technical Background
+
+**IR Signal Format:**
+- Raw IR: sequence of mark (ON) and space (OFF) durations in microseconds
+- Broadlink: uses ~32.84 µs ticks (269/8192 ms), with 0x00 escape for 16-bit values
+- Tuya: 16-bit little-endian durations, LZ-compressed for efficiency
+
+**Compression Algorithm:**
+- Sliding window: 8KB (2^13 bytes)
+- Max match length: 265 bytes
+- Two token types: literal blocks (≤32 bytes) and distance blocks (length-distance pairs)
+- Level 2 strategy: use best match found (balance compression vs speed)
+
+### Technical References
+- Tuya IR codec specification: https://gist.github.com/mildsunrise/1d576669b63a260d2cff35fda63ec0b5
+- Broadlink → Tuya converter examples: https://gist.github.com/svyatogor/7839d00303998a9fa37eb48494dd680f
+
+## Validation
+
+Test that conversion works correctly:
+```bash
+make db-test-conversion
+```
+
+This runs the test suite that validates conversion against known-good reference files.
+
+## Legacy Python Converter
+
+The repository includes a Python reference implementation at [docs/smartir/reference/broadlink_to_tuya.py](smartir/reference/broadlink_to_tuya.py). This is kept for validation purposes but is no longer required for normal operation, as the Go implementation handles conversion automatically.

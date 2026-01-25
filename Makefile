@@ -17,7 +17,7 @@ GOGET=$(GOCMD) get
 GOFMT=$(GOCMD) fmt
 GOVET=$(GOCMD) vet
 
-.PHONY: help build test run demo clean fmt vet check coverage db-init db-reset db-load db-status
+.PHONY: help build test run demo clean fmt vet check coverage db-init db-reset db-load db-import db-import-model db-test-conversion db-status
 
 # Default target - show help
 help:
@@ -38,10 +38,15 @@ help:
 	@echo "  make check      - Run fmt, vet, and test"
 	@echo ""
 	@echo "Database Management:"
-	@echo "  make db-init    - Initialize database schema"
-	@echo "  make db-reset   - Reset database (delete and reinitialize)"
-	@echo "  make db-load    - Load IR codes from SmartIR files"
-	@echo "  make db-status  - Show database status"
+	@echo "  make db-init              - Initialize database schema"
+	@echo "  make db-reset             - Reset database (delete and reinitialize)"
+	@echo "  make db-load              - Load all IR codes from docs/smartir/reference/"
+	@echo "  make db-import DIR=<path> - Import SmartIR files from custom directory"
+	@echo "  make db-import-model FILE=<file> - Import single SmartIR model file"
+	@echo "  make db-test-conversion   - Test Broadlink to Tuya conversion"
+	@echo "  make db-status            - Show database status"
+	@echo ""
+	@echo "Note: db-load, db-import, and db-import-model auto-detect and convert Broadlink format"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean      - Remove build artifacts and database"
@@ -112,9 +117,40 @@ db-reset:
 	@$(GOCMD) run -tags dbtools ./tools/db init $(DB_FILE)
 
 # Load IR codes from SmartIR files
+# Now supports both Broadlink (.json) and Tuya (_tuya.json) formats automatically
 db-load:
 	@echo "Loading IR codes from SmartIR files..."
 	@$(GOCMD) run -tags dbtools ./tools/db load $(DB_FILE) docs/smartir/reference
+
+# Import SmartIR files (Broadlink or Tuya format) from a custom directory
+# Usage: make db-import DIR=/path/to/smartir/files
+db-import:
+	@if [ -z "$(DIR)" ]; then \
+		echo "Error: DIR variable not set."; \
+		echo "Usage: make db-import DIR=/path/to/smartir/files"; \
+		exit 1; \
+	fi
+	@echo "Importing SmartIR files from $(DIR)..."
+	@$(GOCMD) run -tags dbtools ./tools/db load $(DB_FILE) $(DIR)
+
+# Import a single SmartIR model file (Broadlink or Tuya format)
+# Usage: make db-import-model FILE=docs/smartir/reference/1109.json
+db-import-model:
+	@if [ -z "$(FILE)" ]; then \
+		echo "Error: FILE variable not set."; \
+		echo "Usage: make db-import-model FILE=path/to/model.json"; \
+		exit 1; \
+	fi
+	@echo "Importing SmartIR model from $(FILE)..."
+	@MODELID=$$(basename $(FILE) .json | sed 's/_tuya$$//'); \
+	$(GOCMD) run -tags dbtools ./tools/db load-single $(DB_FILE) $$MODELID $(FILE)
+
+# Test the conversion by comparing database contents before/after loading Broadlink files
+db-test-conversion:
+	@echo "Testing Broadlink to Tuya conversion..."
+	@echo "This validates that loading Broadlink files produces correct database entries."
+	@$(GOCMD) test -v ./internal/database/ -run TestLoad
+	@echo "Conversion test complete!"
 
 # Show database status
 db-status:

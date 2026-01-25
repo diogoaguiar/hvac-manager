@@ -31,6 +31,13 @@ func main() {
 			os.Exit(1)
 		}
 		loadDB(ctx, dbPath, os.Args[3])
+	case "load-single":
+		if len(os.Args) < 5 {
+			fmt.Println("Error: load-single command requires model ID and file path")
+			printUsage()
+			os.Exit(1)
+		}
+		loadSingleFile(ctx, dbPath, os.Args[3], os.Args[4])
 	case "status":
 		statusDB(ctx, dbPath)
 	default:
@@ -44,9 +51,12 @@ func printUsage() {
 	fmt.Println("Usage: db <command> <database-file> [args]")
 	fmt.Println("")
 	fmt.Println("Commands:")
-	fmt.Println("  init <db-file>              - Initialize database schema")
-	fmt.Println("  load <db-file> <dir>        - Load IR codes from directory")
-	fmt.Println("  status <db-file>            - Show database status")
+	fmt.Println("  init <db-file>                    - Initialize database schema")
+	fmt.Println("  load <db-file> <dir>              - Load IR codes from directory")
+	fmt.Println("  load-single <db-file> <id> <file> - Load single SmartIR file with model ID")
+	fmt.Println("  status <db-file>                  - Show database status")
+	fmt.Println("")
+	fmt.Println("The loader automatically detects and converts Broadlink format to Tuya.")
 }
 
 func initDB(ctx context.Context, dbPath string) {
@@ -88,6 +98,26 @@ func loadDB(ctx context.Context, dbPath, dirPath string) {
 	for _, modelID := range models {
 		fmt.Printf("  - %s\n", modelID)
 	}
+}
+
+func loadSingleFile(ctx context.Context, dbPath, modelID, filePath string) {
+	db, err := database.New(dbPath)
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	// Ensure schema is initialized
+	if err := db.Migrate(ctx); err != nil {
+		log.Fatalf("Failed to migrate database: %v", err)
+	}
+
+	// Load the single file
+	if err := db.LoadFromJSON(ctx, modelID, filePath); err != nil {
+		log.Fatalf("Failed to load file: %v", err)
+	}
+
+	fmt.Printf("✓ Loaded model %s from %s\n", modelID, filePath)
 }
 
 func statusDB(ctx context.Context, dbPath string) {

@@ -58,9 +58,13 @@ cmd/
 internal/
   ├── database/              # ✅ SQLite IR code database (Phase 2)
   │   ├── database.go        # Core DB operations, queries
-  │   ├── loader.go          # Load SmartIR JSON files
+  │   ├── loader.go          # Load SmartIR JSON files (auto-converts formats)
+  │   ├── converter.go       # Broadlink-to-Tuya conversion API
+  │   ├── tuya_codec.go      # Tuya LZ compression algorithm
   │   ├── schema.sql         # Database schema (embedded)
-  │   └── database_test.go   # Unit tests
+  │   ├── database_test.go   # Database unit tests
+  │   ├── converter_test.go  # Conversion validation tests
+  │   └── README.md          # Package documentation
   ├── mqtt/                  # 📋 MQTT client wrapper, message handlers
   ├── state/                 # 📋 AC state management
   │   └── state.go           # AC state struct and transitions
@@ -159,7 +163,7 @@ tools/
 ### When Adding New Features
 1. Update relevant docs in `docs/`
 2. Add tests if applicable
-3. **Run `go fmt ./...` to format code**
+3. **Run `make fmt` to format code**
 4. Update AGENTS.md and README.md if architecture changes
 5. Commit docs and code together
 

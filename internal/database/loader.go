@@ -78,9 +78,10 @@ func (c *SmartIRCommands) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// LoadFromJSON reads a SmartIR JSON file and populates the database
-// Can be called multiple times to add additional models
-// Uses UPSERT (ON CONFLICT) to update existing models if called again with same modelID
+// LoadFromJSON reads a SmartIR JSON file and populates the database.
+// Supports both Broadlink and Tuya formats - automatically detects and converts if needed.
+// Can be called multiple times to add additional models.
+// Uses UPSERT (ON CONFLICT) to update existing models if called again with same modelID.
 func (db *DB) LoadFromJSON(ctx context.Context, modelID, filePath string) error {
 	// Read file
 	data, err := os.ReadFile(filePath)
@@ -92,6 +93,11 @@ func (db *DB) LoadFromJSON(ctx context.Context, modelID, filePath string) error 
 	var smartIR SmartIRFile
 	if err := json.Unmarshal(data, &smartIR); err != nil {
 		return fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	// Convert Broadlink codes to Tuya if needed
+	if err := db.convertCommandsIfNeeded(&smartIR); err != nil {
+		return fmt.Errorf("failed to convert IR codes: %w", err)
 	}
 
 	// Start transaction for atomic insertion
@@ -203,7 +209,60 @@ func (db *DB) insertIRCodes(ctx context.Context, tx *sql.Tx, modelID string, sma
 	return nil
 }
 
-// LoadFromDirectory loads all *_tuya.json files from a directory
+// convertCommandsIfNeeded detects the format and converts Broadlink codes to Tuya if necessary.
+// Detection is based on the commandsEncoding field:
+// - "Base64" = Broadlink format (needs conversion)
+// - "Raw" = Tuya format (already converted)
+//
+// After conversion, updates the metadata fields to reflect Tuya format.
+func (db *DB) convertCommandsIfNeeded(smartIR *SmartIRFile) error {
+	// Check if conversion is needed
+	if smartIR.CommandsEncoding == "Raw" && smartIR.SupportedController == "MQTT" {
+		// Already in Tuya format, no conversion needed
+		return nil
+	}
+
+	if smartIR.CommandsEncoding != "Base64" {
+		return fmt.Errorf("unsupported commandsEncoding: %s (expected 'Base64' or 'Raw')",
+			smartIR.CommandsEncoding)
+	}
+
+	// Convert "off" command if present
+	if smartIR.Commands.Off != "" {
+		converted, err := ConvertBroadlinkToTuya(smartIR.Commands.Off)
+		if err != nil {
+			return fmt.Errorf("failed to convert 'off' command: %w", err)
+		}
+		smartIR.Commands.Off = converted
+	}
+
+	// Convert all mode-based commands
+	for mode, fanSpeeds := range smartIR.Commands.Modes {
+		for fanSpeed, temperatures := range fanSpeeds {
+			for tempStr, code := range temperatures {
+				converted, err := ConvertBroadlinkToTuya(code)
+				if err != nil {
+					return fmt.Errorf("failed to convert code for mode=%s fan=%s temp=%s: %w",
+						mode, fanSpeed, tempStr, err)
+				}
+				smartIR.Commands.Modes[mode][fanSpeed][tempStr] = converted
+			}
+		}
+	}
+
+	// Update metadata to reflect Tuya format
+	smartIR.CommandsEncoding = "Raw"
+	smartIR.SupportedController = "MQTT"
+
+	return nil
+}
+
+// LoadFromDirectory loads all SmartIR JSON files from a directory.
+// Supports both naming conventions:
+// - Modern: "1109.json" (Broadlink format, will be auto-converted)
+// - Legacy: "1109_tuya.json" (pre-converted Tuya format)
+//
+// The model ID is extracted from the filename (part before .json or _tuya.json).
 func (db *DB) LoadFromDirectory(ctx context.Context, dirPath string) error {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
@@ -215,17 +274,21 @@ func (db *DB) LoadFromDirectory(ctx context.Context, dirPath string) error {
 			continue
 		}
 
-		// Only load *_tuya.json files
+		// Only process JSON files
 		name := entry.Name()
 		if filepath.Ext(name) != ".json" {
 			continue
 		}
-		if len(name) < 10 || name[len(name)-10:] != "_tuya.json" {
-			continue
-		}
 
-		// Extract model ID (e.g., "1109_tuya.json" → "1109")
-		modelID := name[:len(name)-10]
+		// Extract model ID based on naming convention
+		var modelID string
+		if len(name) > 10 && name[len(name)-10:] == "_tuya.json" {
+			// Legacy format: "1109_tuya.json" → "1109"
+			modelID = name[:len(name)-10]
+		} else {
+			// Modern format: "1109.json" → "1109"
+			modelID = name[:len(name)-5]
+		}
 
 		filePath := filepath.Join(dirPath, name)
 		if err := db.LoadFromJSON(ctx, modelID, filePath); err != nil {

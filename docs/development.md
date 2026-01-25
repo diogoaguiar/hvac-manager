@@ -122,16 +122,58 @@ Connect your IR blaster (ZS06) and note its device ID in Zigbee2MQTT.
 The project includes a Makefile for common tasks:
 
 ```bash
+# Build & Run
 make build    # Build binary to bin/hvac-manager
 make test     # Run all tests
 make run      # Run directly without building
+make demo     # Run database demo
+
+# Code Quality
 make fmt      # Format code
 make vet      # Run static analysis
 make check    # Run fmt, vet, and test
 make coverage # Generate HTML coverage report
+
+# Database Management
+make db-init              # Initialize database schema
+make db-load              # Load SmartIR files (auto-converts Broadlink → Tuya)
+make db-import DIR=<path> # Import from custom directory
+make db-import-model FILE=<file> # Import single model
+make db-test-conversion   # Validate conversion
+make db-status            # Show database info
+make db-reset             # Reset database
+
+# Cleanup
 make clean    # Remove build artifacts
 make help     # Show all available commands
 ```
+
+### Database Setup
+
+The database stores pre-processed IR codes for fast lookup. Initialize and load data:
+
+```bash
+# One-time setup
+make db-init
+make db-load
+
+# Or combined reset + load
+make db-reset && make db-load
+```
+
+**SmartIR File Import:**
+The loader automatically converts Broadlink format files to Tuya during import. You can use original SmartIR files directly:
+
+```bash
+# Import a new model from SmartIR
+wget https://raw.githubusercontent.com/smartHomeHub/SmartIR/master/codes/climate/1120.json
+make db-import-model FILE=1120.json
+
+# Import from a directory of SmartIR files
+make db-import DIR=/path/to/smartir/codes/climate
+```
+
+For more details, see [IR Code Import Guide](ir-code-prep.md).
 
 ### Development Build
 
