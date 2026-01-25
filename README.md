@@ -2,9 +2,30 @@
 
 > **A Go Climate Sidecar for Home Assistant, through MQTT and Zigbee**
 
-> **Status:** 🚧 Work In Progress - Phase 2 (IR Code Database) Complete
+> **Status:** 🎉 E2E POC Available! Test HA integration now (no IR signals yet)
 
 A standalone Go microservice for intelligent AC control via Zigbee2MQTT. This service acts as a bridge between Home Assistant and Zigbee IR blasters, managing AC state and dispatching pre-translated IR codes from the SmartIR database.
+
+## 🚀 Try the E2E POC!
+
+**NEW:** Test the full Home Assistant integration using your existing MQTT broker!
+
+```bash
+# 1. Configure your MQTT broker (where your HA connects)
+export MQTT_BROKER="tcp://YOUR_HA_IP:1883"
+export MQTT_USERNAME="your_mqtt_user"  # if needed
+export MQTT_PASSWORD="your_password"    # if needed
+
+# 2. Run the POC
+go run cmd/main.go
+
+# 3. Climate entity appears automatically in Home Assistant! 🎉
+#    Check: Settings → Devices & Services → MQTT → "Living Room AC"
+```
+
+The POC demonstrates MQTT Discovery, state management, and HA command handling. No IR signals sent yet - perfect for testing integration!
+
+**[🚀 Quick Start Guide →](GETTING-STARTED.md)** | **[📖 Full Setup Guide →](docs/poc-setup.md)**
 
 ## Quick Overview
 
@@ -46,19 +67,19 @@ graph LR
 - [x] CLI tool for database management
 - [x] Working demo application
 
-**📋 Phase 3: State Management (Planned)**
-- [ ] Implement `ACState` struct (Temp, Mode, Fan, Swing)
-- [ ] State validation and transition logic
-- [ ] Rate limiting and error handling
+**🎉 Phase 3: E2E POC (Complete)**
+- [x] Basic `ACState` struct with validation
+- [x] MQTT client wrapper
+- [x] Home Assistant MQTT Discovery
+- [x] Command handling and state synchronization
+- [x] Docker Compose setup for testing
+- [x] Full integration without IR signals
 
-**📋 Phase 4: Home Assistant Integration (Planned)**
-- [ ] MQTT Auto-Discovery implementation
-- [ ] Climate entity command parsing
-- [ ] State synchronization with HA
-
-**📋 Phase 4: HA Integration (Planned)**
-- [ ] Implement MQTT Auto-Discovery payload
-- [ ] Link HA commands to Go logic
+**📋 Phase 4: Full Integration (Next)**
+- [ ] Connect state management to IR database
+- [ ] Implement IR code lookup on state change
+- [ ] Publish to Zigbee2MQTT for actual IR transmission
+- [ ] Advanced state validation and error recovery
 
 ## Key Technical Challenges
 
@@ -82,23 +103,35 @@ SmartIR databases use **Broadlink format** (`JgB...`), but our ZS06 hardware req
 
 ## Quick Start
 
+### Try the E2E POC (No Hardware Required)
+
 ```bash
-# Prerequisites: Go 1.25+, MQTT broker, Zigbee2MQTT with IR blaster
+# Prerequisites: Go 1.25+, Home Assistant with MQTT
 
 # Clone and setup
 git clone https://github.com/diogoaguiar/hvac-manager.git
 cd hvac-manager
 go mod download
 
-# Configure (create config file - TODO)
-# Edit configuration for your MQTT broker and devices
+# Configure to use your existing MQTT broker
+export MQTT_BROKER="tcp://YOUR_HA_BROKER_IP:1883"
+export MQTT_USERNAME="mqtt_user"  # optional
+export MQTT_PASSWORD="password"    # optional
 
+# Run the POC application
+go run cmd/main.go
+
+# The climate entity will auto-discover in Home Assistant!
+```
+
+**📖 [Complete POC Setup Guide](docs/poc-setup.md)** - Full instructions with troubleshooting
+
+### Production Build (Future)
+
+```bash
 # Build and run (using Make)
 make build
 ./bin/hvac-manager
-
-# Or run directly
-make run
 
 # See all available commands
 make help

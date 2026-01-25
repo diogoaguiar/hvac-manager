@@ -8,21 +8,26 @@
 **Subtitle:** A Go Climate Sidecar for Home Assistant, through MQTT and Zigbee  
 **Type:** Standalone Go microservice  
 **Purpose:** Intelligent AC control via MQTT and Zigbee2MQTT IR blaster  
-**Status:** Phase 2 Complete (IR Code Database), Phase 3 Next (State Management)  
+**Status:** E2E POC Complete, Phase 4 Next (Full Integration)  
 **Last Updated:** 2026-01-25
 
 ## Critical Context
 
 ### What This Project Does
-This is a **stateful IR code lookup service** that:
-1. Maintains internal AC state (temperature, mode, fan speed)
-2. Looks up appropriate IR codes from SmartIR database (Tuya format)
-3. Sends IR commands via MQTT to Zigbee2MQTT IR blaster
-4. Communicates with Home Assistant via MQTT
-5. Appears as a native Climate entity in Home Assistant via MQTT Discovery
+This is an **E2E proof-of-concept** demonstrating Home Assistant integration:
+1. Connects to MQTT broker
+2. Publishes HA MQTT Discovery (climate entity appears automatically)
+3. Maintains internal AC state (temperature, mode, fan speed)
+4. Receives commands from Home Assistant via MQTT
+5. Validates and updates state
+6. Publishes state back to HA
+7. Logs what IR codes would be sent (no actual transmission yet)
+
+**Next:** Connect to IR code database for actual IR transmission via Zigbee2MQTT
 
 ### Why It Exists
 - **Goal:** Learn Go by building a practical home automation service
+- **Current Focus:** Validate HA integration with working E2E POC
 - **Problem:** SmartIR provides IR codes, but we need a bridge to HA + Zigbee2MQTT
 - **Problem:** SmartIR codes converted to Tuya format for ZS06 IR Blaster
 - **Solution:** Go microservice as container sidecar that manages state and IR code dispatch
@@ -52,9 +57,8 @@ hvac-manager/
 
 ### Code Organization (Current & Planned)
 ```
-cmd/
-  ├── main.go                # Entry point (placeholder)
-  └── demo/main.go           # Working database demo
+cmd/✅ E2E POC Entry point
+  └── demo/main.go           # ✅ Database demo
 internal/
   ├── database/              # ✅ SQLite IR code database (Phase 2)
   │   ├── database.go        # Core DB operations, queries
@@ -65,9 +69,11 @@ internal/
   │   ├── database_test.go   # Database unit tests
   │   ├── converter_test.go  # Conversion validation tests
   │   └── README.md          # Package documentation
-  ├── mqtt/                  # 📋 MQTT client wrapper, message handlers
-  ├── state/                 # 📋 AC state management
-  │   └── state.go           # AC state struct and transitions
+  ├── mqtt/                  # ✅ MQTT client wrapper (POC)
+  │   └── client.go          # Connection, publish, subscribe
+  ├── state/                 # ✅ AC state management (POC)
+  │   └── state.go           # AC state struct and validation
+  └── homeassistant/         # ✅ HA MQTT Discovery (POC)
   └── homeassistant/         # 📋 HA MQTT Discovery integration
       └── discovery.go       # Auto-discovery payload generation
 tools/
@@ -81,24 +87,25 @@ tools/
 - **SmartIR database:** Pre-translated IR codes in Tuya format (JSON files)
 
 ## Technical Deep Dive
-
-### Data Flow (Complete Pipeline)
+E2E POC - Current Implementation)
 ```
 1. User Action in HA
-   ↓ MQTT: homeassistant/climate/ac/set
+   ↓ MQTT: homeassistant/climate/living_room/set
 2. Go Service receives JSON {"temperature": 21, "mode": "cool"}
-   ↓ Update internal state
-3. IR Code Lookup
-   ↓ Query SmartIR database: {temp: 21, mode: "cool", fan: "auto"}
-   ↓ Retrieve Tuya-format IR code (e.g., "C/MgAQUBFAU...")
-4. Publish to zigbee2mqtt/ir-blaster/set
-   ↓ MQTT: {"ir_code_to_send": "C/MgAQUBFAU..."}
-5. IR Blaster transmits signal
-   ↓ Zigbee2MQTT forwards to ZS06
-   ↓ ZS06 transmits IR to AC unit
-6. Publish state back to homeassistant/climate/ac/state
+   ↓ Parse and validate command
+3. State Update
+   ↓ Update ACState struct
+   ↓ Validate temperature range (16-30°C)
+   ↓ Validate mode (off, cool, heat, etc.)
+4. [POC] Log what would be sent
+   ↓ Log: "Would look up IR code for: Mode: cool, Temp: 21.0°C, Fan: auto"
+   ↓ Log: "Would publish to: zigbee2mqtt/ir-blaster/set"
+5. Publish state back to homeassistant/climate/living_room/state
    ↓ MQTT: {"temperature": 21, "mode": "cool", "fan_mode": "auto"}
-7. HA UI updates
+6. HA UI updates
+   ↓ User sees confirmation
+
+Note: Steps 4-5 in production will include actual IR code lookup and transmiss
    ↓ User sees confirmation
 ```
 
@@ -138,17 +145,22 @@ tools/
 - [x] Handle missing codes gracefully
 - [x] Unit tests for lookup logic with real data
 - [x] Database CLI tool for management
-- [x] Working demo application
+- [x] WorkingE2E POC ✅
+- [x] Basic `ACState` struct with validation
+- [x] MQTT client wrapper (connect, publish, subscribe)
+- [x] Home Assistant MQTT Discovery payload
+- [x] Command parsing and handling
+- [x] State synchronization with HA
+- [x] Docker Compose setup for MQTT broker
+- [x] POC documentation and setup guide
+- [x] Full integration demonstration (no IR yet)
 
-### Phase 3: State Management 📋
-- [ ] Define `ACState` struct
-- [ ] Implement state transitions
-- [ ] State validation (temp ranges, valid modes)
-- [ ] Track last command timestamp
-
-### Phase 4: HA Integration 📋
-- [ ] MQTT Auto-Discovery payload
-- [ ] Command parsing from HA
+### Phase 4: Full Integration 📋
+- [ ] Connect state changes to IR database lookup
+- [ ] Implement IR code retrieval on state update
+- [ ] Publish IR codes to Zigbee2MQTT
+- [ ] Handle IR transmission errors
+- [ ] End-to-end testing with real hardware
 - [ ] State synchronization
 - [ ] Error handling and recovery
 
@@ -234,13 +246,14 @@ var state ACState
   - Store sample SmartIR JSON files
   - Keep example IR codes for validation
 - **Mocking:** Use interfaces for external dependencies (MQTT client, file system)
-- **CI/CD:** All tests must pass before merging
-
-## Important Files for AI Context
-
-When working on this project, these files are essential reading:
-
-1. [README.md](README.md) - Project overview and quick start
+- **CI/CD:** All tests must pass before mergingE2E POC quick start
+2. [docs/poc-setup.md](docs/poc-setup.md) - Complete POC setup guide
+3. [docs/architecture.md](docs/architecture.md) - System design
+4. [docs/protocols.md](docs/protocols.md) - Technical protocol specs
+5. [docs/api.md](docs/api.md) - MQTT topics and message formats
+6. [docs/development.md](docs/development.md) - Development workflows
+7. [docs/ir-code-prep.md](docs/ir-code-prep.md) - IR code conversion workflow
+8. [cmd/main.go](cmd/main.go) - Current POC implementation
 2. [docs/architecture.md](docs/architecture.md) - System design
 3. [docs/protocols.md](docs/protocols.md) - Technical protocol specs
 4. [docs/api.md](docs/api.md) - MQTT topics and message formats
@@ -267,9 +280,9 @@ When working on this project, these files are essential reading:
 - [ZS06 IR Blaster](https://www.aliexpress.com/item/1005003878194474.html) - Hardware device
 - [Zigbee2MQTT Docs](https://www.zigbee2mqtt.io/) - Z2M integration guide
 
-### Libraries & Tools
-- [Eclipse Paho Go](https://github.com/eclipse/paho.mqtt.golang) - MQTT client
-- [Home Assistant MQTT Climate](https://www.home-assistant.io/integrations/climate.mqtt/) - HA integration docs
+### Libraries & Tools (includes POC info), then docs/poc-setup.md, then architecture.md
+2. **Validate against code:** Documentation describes intent, code is current reality
+3. **POC Status:** Phase 3 (E2E POC) is complete - working HA integration without IRtegrations/climate.mqtt/) - HA integration docs
 
 ## AI Assistant Guidelines
 
@@ -296,7 +309,7 @@ When working on this project, these files are essential reading:
 
 Update this file when:
 - [ ] Project structure changes (new packages, moved files)
-- [ ] Phase transitions (mark phases complete, update current focus)
+- [ ] Phase transitionsE2E POC completion - Full HA integration working
 - [ ] Architecture decisions change (MQTT topics, data flow)
 - [ ] New dependencies added
 - [ ] Major features implemented
