@@ -27,6 +27,12 @@ logs/
 *.tmp
 tmp/
 
+# Database files
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
 # Editor/IDE
 .vscode/
 .idea/

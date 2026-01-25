@@ -149,8 +149,9 @@ internal/
 ### When Adding New Features
 1. Update relevant docs in `docs/`
 2. Add tests if applicable
-3. Update AGENTS.md and README.md if architecture changes
-4. Commit docs and code together
+3. **Run `go fmt ./...` to format code**
+4. Update AGENTS.md and README.md if architecture changes
+5. Commit docs and code together
 
 ### When Debugging MQTT
 - Check topic subscriptions match expected format

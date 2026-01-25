@@ -551,7 +551,7 @@ if !bytes.Equal(original, decompressed) {
 Follow standard Go conventions:
 
 ```bash
-# Format code
+# Format code (ALWAYS run after editing Go files)
 go fmt ./...
 
 # Check for common issues
@@ -560,6 +560,8 @@ go vet ./...
 # Run linter (if installed)
 golangci-lint run
 ```
+
+**Important:** Always run `go fmt ./...` after creating or editing Go files. This ensures consistent formatting according to Go standards and prevents formatting-related diffs in version control.
 
 ### Naming Conventions
 
@@ -688,10 +690,10 @@ refactor: extract pulse timing to separate package
 ### Pull Request Checklist
 
 - [ ] Code builds without errors
+- [ ] **Code formatted** (`go fmt ./...` - REQUIRED before commit)
 - [ ] **All tests pass** (`go test ./...`)
 - [ ] **New tests added** for new functionality (required!)
 - [ ] **Coverage maintained/improved** (`go test -cover ./...`)
-- [ ] Code formatted (`go fmt ./...`)
 - [ ] No linter warnings (`go vet ./...`)
 - [ ] Documentation updated (README, docs/)
 - [ ] AGENTS.md updated if architecture changed
