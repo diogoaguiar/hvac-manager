@@ -211,6 +211,15 @@ devices:
 
 ## Testing
 
+> **Critical:** All code must be testable and tested! Write tests as you implement features, not as an afterthought.
+
+### Testing Philosophy
+
+- **Test-Driven Development (TDD):** Write tests first when practical
+- **Coverage Goals:** Aim for >80% coverage on business logic
+- **Test Quality:** Tests should be readable, maintainable, and fast
+- **Fail Fast:** Tests should catch bugs before they reach production
+
 ### Unit Tests
 
 Run all unit tests:
@@ -232,6 +241,11 @@ go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out -o coverage.html
 ```
 
+**Coverage targets:**
+- Core logic (state, lookup): >90%
+- MQTT handlers: >70%
+- Overall project: >80%
+
 ### Test Structure
 
 ```
@@ -248,43 +262,90 @@ internal/
 
 ### Writing Tests
 
-Example test for protocol generation:
+#### Table-Driven Tests (Go Best Practice)
 
 ```go
-package protocol
+package ircodes
 
 import "testing"
 
-func TestGenerateFrame2(t *testing.T) {
-    state := ACState{
-        Power: true,
-        Mode: ModeCool,
-        Temperature: 21.0,
-        FanSpeed: FanAuto,
+func TestLookupCode(t *testing.T) {
+    // Table-driven test: efficient way to test multiple scenarios
+    tests := []struct {
+        name    string
+        state   ACState
+        want    string
+        wantErr bool
+    }{
+        {
+            name: "cool mode 21C auto fan",
+            state: ACState{Mode: "cool", Temp: 21, Fan: "auto"},
+            want: "C/MgAQUBFAU...",
+            wantErr: false,
+        },
+        {
+            name: "invalid mode",
+            state: ACState{Mode: "invalid", Temp: 21, Fan: "auto"},
+            want: "",
+            wantErr: true,
+        },
+        {
+            name: "temp out of range",
+            state: ACState{Mode: "cool", Temp: 50, Fan: "auto"},
+            want: "",
+            wantErr: true,
+        },
     }
     
-    frame := GenerateFrame2(state)
+    for _, tt := range tests {
+        // Run each test case as a subtest
+        t.Run(tt.name, func(t *testing.T) {
+            got, err := LookupCode(tt.state)
+            
+            if (err != nil) != tt.wantErr {
+                t.Errorf("LookupCode() error = %v, wantErr %v", err, tt.wantErr)
+                return
+            }
+            
+            if got != tt.want {
+                t.Errorf("LookupCode() = %v, want %v", got, tt.want)
+            }
+        })
+    }
+}
+```
+
+#### Testing with Mocks
+
+```go
+package mqtt
+
+import "testing"
+
+// Mock MQTT client for testing
+type MockClient struct {
+    publishedMessages []Message
+}
+
+func (m *MockClient) Publish(topic string, payload []byte) error {
+    m.publishedMessages = append(m.publishedMessages, Message{topic, payload})
+    return nil
+}
+
+func TestHandleCommand(t *testing.T) {
+    mockClient := &MockClient{}
+    handler := NewHandler(mockClient)
     
-    // Verify length
-    if len(frame) != 19 {
-        t.Errorf("Expected 19 bytes, got %d", len(frame))
+    cmd := `{"temperature": 21, "mode": "cool"}`
+    err := handler.HandleCommand("test/set", []byte(cmd))
+    
+    if err != nil {
+        t.Fatalf("HandleCommand() error = %v", err)
     }
     
-    // Verify header
-    if frame[0] != 0x11 || frame[1] != 0xDA || frame[2] != 0x27 {
-        t.Error("Invalid frame header")
-    }
-    
-    // Verify temperature encoding
-    expectedTemp := byte((21 * 2) - 10)
-    if frame[6] != expectedTemp {
-        t.Errorf("Expected temp %x, got %x", expectedTemp, frame[6])
-    }
-    
-    // Verify checksum
-    checksum := calculateChecksum(frame[:18])
-    if frame[18] != checksum {
-        t.Errorf("Invalid checksum: expected %x, got %x", checksum, frame[18])
+    // Verify IR code was published
+    if len(mockClient.publishedMessages) != 1 {
+        t.Errorf("Expected 1 published message, got %d", len(mockClient.publishedMessages))
     }
 }
 ```
@@ -611,8 +672,11 @@ refactor: extract pulse timing to separate package
 ### Pull Request Checklist
 
 - [ ] Code builds without errors
-- [ ] All tests pass (`go test ./...`)
+- [ ] **All tests pass** (`go test ./...`)
+- [ ] **New tests added** for new functionality (required!)
+- [ ] **Coverage maintained/improved** (`go test -cover ./...`)
 - [ ] Code formatted (`go fmt ./...`)
+- [ ] No linter warnings (`go vet ./...`)
 - [ ] Documentation updated (README, docs/)
 - [ ] AGENTS.md updated if architecture changed
 - [ ] Commit messages are clear and descriptive

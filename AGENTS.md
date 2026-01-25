@@ -175,6 +175,8 @@ internal/
 - Balance education with readability - don't over-comment, but explain non-obvious choices
 - Use real-world patterns that would appear in production Go services
 - Avoid clever tricks; prefer straightforward, understandable implementations
+- **Write testable code:** Design functions to be easily unit tested (pure functions, dependency injection)
+- **Include tests:** Every feature implementation must include adequate test coverage
 
 **Comment Examples:**
 ```go
@@ -204,10 +206,20 @@ var state ACState
 - Log all MQTT errors with context
 
 ### Testing Strategy
-- Unit tests for pure functions (protocol generation, encoding)
-- Integration tests for MQTT flows (use test broker)
-- Mock AC unit responses for E2E tests
-- Keep test data in `testdata/` directories
+**Critical:** All code must be testable and tested!
+
+- **Unit tests:** Required for all pure functions (code lookup, state validation, JSON parsing)
+  - Target: >80% code coverage for business logic
+  - Use table-driven tests for multiple scenarios
+  - Test edge cases and error conditions
+- **Integration tests:** For MQTT flows (use test broker)
+  - Test full command processing pipeline
+  - Verify state synchronization
+- **Test data:** Keep fixtures in `testdata/` directories
+  - Store sample SmartIR JSON files
+  - Keep example IR codes for validation
+- **Mocking:** Use interfaces for external dependencies (MQTT client, file system)
+- **CI/CD:** All tests must pass before merging
 
 ## Important Files for AI Context
 
