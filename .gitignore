@@ -10,9 +10,17 @@ out/
 *.test
 *.out
 
+# Project-specific binaries
+hvac-manager
+hvac-manager-*
+__debug_bin
+debug
+
 # Go coverage
 coverage.out
+coverage.html
 *.coverprofile
+*.cov
 
 # Go workspace files
 go.work
@@ -45,6 +53,12 @@ Thumbs.db
 # Env files
 .env
 .env.*
+!.env.example
+
+# Local config overrides
+config.local.yaml
+config.local.json
+*.local.*
 
 # Python (docs helpers)
 __pycache__/
