@@ -89,9 +89,15 @@ go mod download
 # Configure (create config file - TODO)
 # Edit configuration for your MQTT broker and devices
 
-# Build and run
-go build -o go-climate-sidecar ./cmd
-./go-climate-sidecar
+# Build and run (using Make)
+make build
+./bin/hvac-manager
+
+# Or run directly
+make run
+
+# See all available commands
+make help
 ```
 
 ## Hardware Requirements

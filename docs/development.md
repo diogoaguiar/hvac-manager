@@ -117,6 +117,22 @@ Connect your IR blaster (ZS06) and note its device ID in Zigbee2MQTT.
 
 ## Building the Project
 
+### Using Make (Recommended)
+
+The project includes a Makefile for common tasks:
+
+```bash
+make build    # Build binary to bin/hvac-manager
+make test     # Run all tests
+make run      # Run directly without building
+make fmt      # Format code
+make vet      # Run static analysis
+make check    # Run fmt, vet, and test
+make coverage # Generate HTML coverage report
+make clean    # Remove build artifacts
+make help     # Show all available commands
+```
+
 ### Development Build
 
 ```bash
