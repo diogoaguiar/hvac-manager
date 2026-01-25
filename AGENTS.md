@@ -8,8 +8,8 @@
 **Subtitle:** A Go Climate Sidecar for Home Assistant, through MQTT and Zigbee  
 **Type:** Standalone Go microservice  
 **Purpose:** Intelligent AC control via MQTT and Zigbee2MQTT IR blaster  
-**Status:** Phase 1 Complete (Connectivity), Phase 2 In Progress (Encoder)  
-**Last Updated:** 2026-01-24
+**Status:** Phase 2 Complete (IR Code Database), Phase 3 Next (State Management)  
+**Last Updated:** 2026-01-25
 
 ## Critical Context
 
@@ -50,24 +50,31 @@ hvac-manager/
 └── AGENTS.md                # This file (AI-focused)
 ```
 
-### Code Organization (Planned)
+### Code Organization (Current & Planned)
 ```
-cmd/main.go                  # Entry point, MQTT setup, main loop
+cmd/
+  ├── main.go                # Entry point (placeholder)
+  └── demo/main.go           # Working database demo
 internal/
-  ├── mqtt/                  # MQTT client wrapper, message handlers
-  ├── state/                 # AC state management
-  │   └── state.go          # AC state struct and transitions
-  ├── ircodes/               # IR code database and lookup
-  │   ├── loader.go         # Load SmartIR JSON files
-  │   └── lookup.go         # Find code for given state
-  └── homeassistant/         # HA MQTT Discovery integration
+  ├── database/              # ✅ SQLite IR code database (Phase 2)
+  │   ├── database.go        # Core DB operations, queries
+  │   ├── loader.go          # Load SmartIR JSON files
+  │   ├── schema.sql         # Database schema (embedded)
+  │   └── database_test.go   # Unit tests
+  ├── mqtt/                  # 📋 MQTT client wrapper, message handlers
+  ├── state/                 # 📋 AC state management
+  │   └── state.go           # AC state struct and transitions
+  └── homeassistant/         # 📋 HA MQTT Discovery integration
       └── discovery.go       # Auto-discovery payload generation
+tools/
+  └── db/main.go             # ✅ Database CLI tool
 ```
 
 ## Key Dependencies
 
 - **Eclipse Paho MQTT (Go):** v1.5.1 - MQTT client library
-- **No external IR libraries:** We implement protocol generation from scratch
+- **modernc.org/sqlite:** v1.44.3 - Pure Go SQLite driver (no CGO)
+- **SmartIR database:** Pre-translated IR codes in Tuya format (JSON files)
 
 ## Technical Deep Dive
 
@@ -120,11 +127,14 @@ internal/
 - [x] MQTT client connection
 - [x] Basic publish/subscribe test with captured IR code
 
-### Phase 2: IR Code Database 🚧
-- [ ] Load SmartIR JSON files (Tuya format)
-- [ ] Implement lookup function (state → IR code)
-- [ ] Handle missing codes gracefully
-- [ ] Unit tests for lookup logic
+### Phase 2: IR Code Database ✅
+- [x] SQLite database with schema versioning and migrations
+- [x] Load SmartIR JSON files (Tuya format)
+- [x] Implement lookup function (state → IR code)
+- [x] Handle missing codes gracefully
+- [x] Unit tests for lookup logic with real data
+- [x] Database CLI tool for management
+- [x] Working demo application
 
 ### Phase 3: State Management 📋
 - [ ] Define `ACState` struct
@@ -288,4 +298,4 @@ Update this file when:
 - [ ] Major features implemented
 - [ ] External references change or become outdated
 
-**Last Major Update:** Initial structure creation (2026-01-24)
+**Last Major Update:** Phase 2 completion - SQLite database implementation (2026-01-25)

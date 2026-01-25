@@ -2,7 +2,7 @@
 
 > **A Go Climate Sidecar for Home Assistant, through MQTT and Zigbee**
 
-> **Status:** 🚧 Work In Progress - Phase 1 (Connectivity) Complete
+> **Status:** 🚧 Work In Progress - Phase 2 (IR Code Database) Complete
 
 A standalone Go microservice for intelligent AC control via Zigbee2MQTT. This service acts as a bridge between Home Assistant and Zigbee IR blasters, managing AC state and dispatching pre-translated IR codes from the SmartIR database.
 
@@ -37,10 +37,14 @@ graph LR
 - [x] Connect to MQTT Broker
 - [x] Verify control by re-sending captured IR commands
 
-**🚧 Phase 2: IR Code Database (In Progress)**
-- [ ] Load SmartIR JSON files (Tuya format)
-- [ ] Implement state-to-code lookup function
-- [ ] Handle missing codes gracefully
+**✅ Phase 2: IR Code Database (Complete)**
+- [x] SQLite database with schema versioning
+- [x] Load SmartIR JSON files (Tuya format)
+- [x] Implement state-to-code lookup function
+- [x] Handle missing codes gracefully
+- [x] Unit tests with real SmartIR data
+- [x] CLI tool for database management
+- [x] Working demo application
 
 **📋 Phase 3: State Management (Planned)**
 - [ ] Implement `ACState` struct (Temp, Mode, Fan, Swing)
