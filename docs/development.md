@@ -300,9 +300,35 @@ go tool cover -html=coverage.out -o coverage.html
 ```
 
 **Coverage targets:**
-- Core logic (state, lookup): >90%
+- Core logic (state, lookup): >90% ✅ **ACHIEVED** (state: 100%, integration: 90%)
 - MQTT handlers: >70%
-- Overall project: >80%
+- Overall project: >80% (current: 37.9% overall, working toward target)
+
+**Current Test Coverage (Phase 4):**
+- `internal/state`: 100% - All validation logic covered
+- `internal/integration`: 90% - SendIRCode with 50+ scenarios
+- `internal/homeassistant`: 88.9% - Discovery and command parsing
+- `internal/database`: 73.2% - Database operations
+- Overall: 37.9% - Infrastructure code not yet fully tested
+
+**Testing Philosophy:**
+- **Unit tests**: Required for all pure functions (code lookup, state validation, JSON parsing)
+  - Use table-driven tests for multiple scenarios (Go best practice)
+  - Test edge cases and error conditions
+  - Mock external dependencies using interfaces
+- **Integration tests**: For MQTT flows and database operations
+  - Use test broker (docker-compose.test.yml on port 1884)
+  - Test full command processing pipeline
+  - Verify state synchronization
+  - Run with: `make test-integration`
+- **Test fixtures**: Keep sample data in `testdata/` directories
+  - Store sample SmartIR JSON files: `testdata/ir_codes/1109_tuya.json`
+  - Keep example IR codes for validation
+  - Use real data for conversion tests
+- **Dependency injection**: Use interfaces for testability
+  - `internal/interfaces/interfaces.go` - IRDatabase, MQTTPublisher
+  - `internal/mocks/mocks.go` - MockDatabase, MockMQTT
+  - Enables pure unit testing without external dependencies
 
 ### Test Structure
 

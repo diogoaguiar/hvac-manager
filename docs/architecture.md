@@ -149,6 +149,47 @@ type ACState struct {
 ### IR Code Lookup
 
 **Responsibilities:**
+- Query SmartIR database for IR codes matching desired AC state
+- Handle format conversion (Broadlink → Tuya) if needed
+- Implement fallback logic for missing exact matches
+- Validate IR code exists before transmission
+- Return error for unsupported states
+
+**Code Lookup Logic:**
+
+1. **Exact State Matching**
+   - Primary strategy: Find exact match for `(mode, temperature, fan_speed)` combination
+   - Query: `SELECT ir_code FROM ir_codes WHERE model_id=? AND mode=? AND temperature=? AND fan_speed=?`
+   - If found: Return IR code immediately
+
+2. **Fallback Strategy** (when exact match not found)
+   - **Temperature rounding**: Try nearest valid temperature (e.g., 21.5°C → 21°C or 22°C)
+   - **Fan speed fallback**: If specific fan speed unavailable, try "auto" fan mode
+   - **Mode validation**: Never fallback on mode changes (fail explicitly)
+   - Priority: Exact match > Temperature fallback > Fan fallback > Error
+
+3. **Validation Rules**
+   - Temperature must be in valid range (typically 16-30°C, model-dependent)
+   - Mode must be supported by AC model (cool, heat, fan, dry, auto)
+   - Fan speed must be valid for mode (some modes restrict fan options)
+   - Database must contain at least one code for requested mode
+
+4. **Special Cases**
+   - **Off mode**: Uses separate `LookupOffCode()` - single code per model
+   - **Power state**: Tracked separately from other state (IR codes include power on)
+   - **Invalid states**: Return error immediately without database query
+
+**SmartIR Code Database:**
+- **Source**: Pre-translated IR codes from [SmartIR project](https://github.com/smartHomeHub/SmartIR)
+- **Format**: JSON files in `docs/smartir/reference/` directory
+- **Structure**: Maps AC states (temp, mode, fan) to Tuya-format IR codes
+- **Tuya Format**: Base64-encoded compressed pulse timings, prefixed with `C/` or `M/`
+- **Example Entry**: `{"mode": "cool", "temp": 21, "fan": "auto"}` → `"C/MgAQUBFAU..."`
+- **Conversion**: Broadlink format automatically converted to Tuya during import
+
+**Implementation**: See [internal/database/database.go](../internal/database/database.go) and [internal/integration/ir_sender.go](../internal/integration/ir_sender.go)
+
+**Responsibilities:**
 - Load SmartIR JSON database files on startup
 - Find IR code matching desired AC state
 - Handle missing codes gracefully (fallback strategies)
