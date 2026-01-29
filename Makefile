@@ -17,7 +17,7 @@ GOGET=$(GOCMD) get
 GOFMT=$(GOCMD) fmt
 GOVET=$(GOCMD) vet
 
-.PHONY: help build test run demo clean fmt vet check coverage db-init db-reset db-load db-import db-import-model db-test-conversion db-status
+.PHONY: help build test run demo clean fmt vet check coverage db-init db-reset db-load db-import db-import-model db-test-conversion db-status discover
 
 # Default target - show help
 help:
@@ -27,6 +27,9 @@ help:
 	@echo "  make build      - Build the application binary"
 	@echo "  make run        - Run the application directly"
 	@echo "  make demo       - Run the database demo"
+	@echo ""
+	@echo "Setup Tools:"
+	@echo "  make discover   - Discover Zigbee2MQTT IR blasters and configure .env"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test              - Run all tests"
@@ -90,6 +93,11 @@ run:
 demo:
 	@echo "Running IR code database demo..."
 	$(GOCMD) run ./cmd/demo
+
+# Discover Zigbee2MQTT IR blasters and configure .env
+discover:
+	@echo "Discovering Zigbee2MQTT IR blasters..."
+	@$(GOCMD) run ./tools/discover
 
 # Format all Go code
 fmt:
