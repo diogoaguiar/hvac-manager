@@ -221,9 +221,11 @@ func main() {
 		}
 
 		// Prompt to update .env file
+		envUpdated := false
 		if *autoUpdate {
 			fmt.Println("\n⚡ Auto-update enabled (-y flag)")
 			updateEnvFile(selectedDevice)
+			envUpdated = true
 		} else {
 			fmt.Println("\n❓ Update .env file automatically?")
 			fmt.Print("   [y/N]: ")
@@ -234,9 +236,36 @@ func main() {
 
 			if response == "y" || response == "yes" {
 				updateEnvFile(selectedDevice)
+				envUpdated = true
 			} else {
 				fmt.Println("\n⏭️  Skipped. Manually add the line above to your .env file.")
 			}
+		}
+
+		// Display other devices (for context)
+		if len(otherDevices) > 0 && receivedBridge {
+			fmt.Println("\n" + strings.Repeat("-", 60))
+			fmt.Printf("📱 Other Zigbee Devices (%d):\n", len(otherDevices))
+			for _, device := range otherDevices {
+				fmt.Printf("   - %s", device.FriendlyName)
+				if device.Definition.Model != "" {
+					fmt.Printf(" (%s)", device.Definition.Model)
+				}
+				fmt.Println()
+			}
+		}
+
+		fmt.Println("\n" + strings.Repeat("=", 60))
+		fmt.Println("✅ Discovery complete!")
+		if envUpdated {
+			fmt.Println("\nNext steps:")
+			fmt.Println("  1. Run: make run")
+			fmt.Println("  2. Test IR transmission from Home Assistant")
+		} else {
+			fmt.Println("\nNext steps:")
+			fmt.Println("  1. Update .env with IR_BLASTER_ID")
+			fmt.Println("  2. Run: make run")
+			fmt.Println("  3. Test IR transmission from Home Assistant")
 		}
 	} else {
 		fmt.Println("\n⚠️  No IR blasters detected!")
@@ -249,26 +278,6 @@ func main() {
 		fmt.Println("  2. Visible in Zigbee2MQTT web UI")
 		fmt.Println("  3. Supported by Zigbee2MQTT")
 	}
-
-	// Display other devices (for context)
-	if len(otherDevices) > 0 && receivedBridge {
-		fmt.Println("\n" + strings.Repeat("-", 60))
-		fmt.Printf("📱 Other Zigbee Devices (%d):\n", len(otherDevices))
-		for _, device := range otherDevices {
-			fmt.Printf("   - %s", device.FriendlyName)
-			if device.Definition.Model != "" {
-				fmt.Printf(" (%s)", device.Definition.Model)
-			}
-			fmt.Println()
-		}
-	}
-
-	fmt.Println("\n" + strings.Repeat("=", 60))
-	fmt.Println("✅ Discovery complete!")
-	fmt.Println("\nNext steps:")
-	fmt.Println("  1. Update .env with IR_BLASTER_ID")
-	fmt.Println("  2. Run: make run")
-	fmt.Println("  3. Test IR transmission from Home Assistant")
 }
 
 // isIRBlaster checks if a device is an IR blaster
