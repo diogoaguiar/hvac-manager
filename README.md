@@ -2,28 +2,35 @@
 
 > **A Go Climate Sidecar for Home Assistant, through MQTT and Zigbee**
 
-> **Status:** 🎉 E2E POC Available! Test HA integration now (no IR signals yet)
+> **Status:** 🎉 Phase 4 Complete - Full IR Transmission Ready!
 
 A standalone Go microservice for intelligent AC control via Zigbee2MQTT. This service acts as a bridge between Home Assistant and Zigbee IR blasters, managing AC state and dispatching pre-translated IR codes from the SmartIR database.
 
-## 🚀 Try the E2E POC!
+## 🚀 Quick Start
 
-**NEW:** Test the full Home Assistant integration using your existing MQTT broker!
+**NEW:** Full integration with IR transmission to real AC units!
 
 ```bash
-# 1. Configure your MQTT broker (where your HA connects)
+# 1. Find your IR blaster device
+go run tools/discover/main.go
+
+# 2. Configure environment (use discovery tool output)
 export MQTT_BROKER="tcp://YOUR_HA_IP:1883"
 export MQTT_USERNAME="your_mqtt_user"  # if needed
 export MQTT_PASSWORD="your_password"    # if needed
+export DATABASE_PATH="ir_codes.db"     # SQLite database for IR codes
+export AC_MODEL_ID="1109"               # SmartIR model (e.g., Daikin ARC433A1)
+export IR_BLASTER_ID="friendly_name"    # From discovery tool
 
-# 2. Run the POC
+# 3. Run the service
 go run cmd/main.go
 
-# 3. Climate entity appears automatically in Home Assistant! 🎉
+# 4. Climate entity appears automatically in Home Assistant! 🎉
 #    Check: Settings → Devices & Services → MQTT → "Living Room AC"
+#    Control AC: It will send actual IR signals!
 ```
 
-The POC demonstrates MQTT Discovery, state management, and HA command handling. No IR signals sent yet - perfect for testing integration!
+The service demonstrates MQTT Discovery, state management, IR code lookup from database, and actual IR transmission!
 
 **[🚀 Quick Start Guide →](GETTING-STARTED.md)** | **[📖 Full Setup Guide →](docs/poc-setup.md)**
 
@@ -75,11 +82,60 @@ graph LR
 - [x] Docker Compose setup for testing
 - [x] Full integration without IR signals
 
-**📋 Phase 4: Full Integration (Next)**
-- [ ] Connect state management to IR database
-- [ ] Implement IR code lookup on state change
-- [ ] Publish to Zigbee2MQTT for actual IR transmission
-- [ ] Advanced state validation and error recovery
+**✅ Phase 4: Full Integration (Complete)**
+- [x] Connect state management to IR database
+- [x] Implement IR code lookup on state change (integration.SendIRCode)
+- [x] Publish to Zigbee2MQTT for actual IR transmission
+- [x] Advanced state validation and error recovery
+- [x] Comprehensive test suite (90%+ business logic coverage)
+- [x] Device discovery tool
+- [ ] Hardware validation (ready for testing)
+
+**📋 Phase 5: Production Ready (Next)**
+- [ ] Container image and Docker Compose deployment
+- [ ] Structured logging and health checks
+- [ ] Metrics and monitoring
+- [ ] CI/CD pipeline
+
+**🔮 Phase 6: Multi-Device Support (Future)**
+- [ ] Support multiple AC units per instance
+- [ ] Device-to-IR-blaster mapping configuration
+- [ ] Zone/room-based routing logic
+- [ ] Multiple climate entities in Home Assistant
+
+## Current Limitations & Future Work
+
+### Single Device Per Instance (Current)
+The current implementation supports **one AC unit controlled by one IR blaster** per service instance. Configuration uses single environment variables:
+
+```env
+AC_MODEL_ID="1109"               # One AC model
+IR_BLASTER_ID="ir-blaster-01"    # One IR blaster device
+```
+
+### Multi-Device Architecture (Phase 6 - Future)
+Future versions will support multiple AC units with multiple IR blasters in a single instance:
+
+**Planned Configuration Format:**
+```env
+DEVICES='[
+  {"id":"living_room","blaster":"Living Room IR","model":"1109","location":"Living Room"},
+  {"id":"bedroom","blaster":"Bedroom IR","model":"1116","location":"Bedroom"},
+  {"id":"office","blaster":"Living Room IR","model":"1109","location":"Office"}
+]'
+```
+
+**Architecture Components:**
+- **Device Registry:** Maps device_id → (ir_blaster_id, ac_model_id, friendly_name)
+- **Command Router:** Routes HA commands to correct IR blaster based on device_id
+- **State Manager:** Tracks state separately for each AC unit
+- **Discovery:** Auto-generates multiple climate entities (one per AC)
+- **Database:** Supports multiple AC models simultaneously
+
+**Use Cases:**
+- Control 3 AC units with 2 IR blasters (zones with shared blasters)
+- Mix different AC models (Daikin, Mitsubishi, LG) in one home
+- Room-based climate control with centralized management
 
 ## Key Technical Challenges
 
@@ -103,28 +159,48 @@ SmartIR databases use **Broadlink format** (`JgB...`), but our ZS06 hardware req
 
 ## Quick Start
 
-### Try the E2E POC (No Hardware Required)
+### Full Integration Setup (Phase 4)
 
 ```bash
-# Prerequisites: Go 1.25+, Home Assistant with MQTT
+# Prerequisites: Go 1.25+, Home Assistant with MQTT, Zigbee IR Blaster
 
 # Clone and setup
 git clone https://github.com/diogoaguiar/hvac-manager.git
 cd hvac-manager
 go mod download
 
-# Configure to use your existing MQTT broker
-export MQTT_BROKER="tcp://YOUR_HA_BROKER_IP:1883"
-export MQTT_USERNAME="mqtt_user"  # optional
-export MQTT_PASSWORD="password"    # optional
+# 1. Discover your IR blaster (finds Zigbee2MQTT devices)
+go run tools/discover/main.go
+# Interactive prompt will help configure .env file
 
-# Run the POC application
+# 2. Configure environment (or use .env file)
+export MQTT_BROKER="tcp://YOUR_HA_BROKER_IP:1883"
+export MQTT_USERNAME="mqtt_user"         # optional
+export MQTT_PASSWORD="password"          # optional
+export DATABASE_PATH="ir_codes.db"       # SQLite database
+export AC_MODEL_ID="1109"                # SmartIR model (e.g., Daikin ARC433A1)
+export IR_BLASTER_ID="your-ir-blaster"   # From discovery tool
+
+# 3. Run the service
 go run cmd/main.go
 
-# The climate entity will auto-discover in Home Assistant!
+# 4. Control your AC from Home Assistant!
+#    Climate entity auto-discovers: Settings → Devices & Services → MQTT
 ```
 
-**📖 [Complete POC Setup Guide](docs/poc-setup.md)** - Full instructions with troubleshooting
+**📖 [Complete Setup Guide](docs/poc-setup.md)** - Full instructions with troubleshooting
+
+### Testing Without Hardware
+
+```bash
+# Run with test MQTT broker (no IR blaster needed)
+make test-integration
+
+# Or manually
+docker-compose -f docker-compose.test.yml up -d
+export MQTT_BROKER="tcp://localhost:1884"
+go run cmd/main.go
+```
 
 ### Production Build (Future)
 
