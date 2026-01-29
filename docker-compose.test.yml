@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  mosquitto-test:
+    image: eclipse-mosquitto:2
+    container_name: hvac-mqtt-broker-test
+    ports:
+      - "1884:1883"  # Use different port to avoid conflicts with main broker
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+    # No restart policy - ephemeral for testing

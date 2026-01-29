@@ -29,8 +29,9 @@ help:
 	@echo "  make demo       - Run the database demo"
 	@echo ""
 	@echo "Testing:"
-	@echo "  make test       - Run all tests"
-	@echo "  make coverage   - Run tests with coverage report"
+	@echo "  make test              - Run all tests"
+	@echo "  make test-integration  - Run integration tests (starts test broker)"
+	@echo "  make coverage          - Run tests with coverage report"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make fmt        - Format all Go code"
@@ -61,6 +62,17 @@ build:
 test:
 	@echo "Running tests..."
 	$(GOTEST) -v ./...
+
+# Run integration tests (requires test broker running)
+test-integration:
+	@echo "Starting test MQTT broker..."
+	@docker-compose -f docker-compose.test.yml up -d
+	@echo "Waiting for broker to be ready..."
+	@sleep 2
+	@echo "Running integration tests..."
+	@$(GOTEST) -v -tags=integration ./... || (docker-compose -f docker-compose.test.yml down && exit 1)
+	@echo "Stopping test broker..."
+	@docker-compose -f docker-compose.test.yml down
 
 # Run tests with coverage
 coverage:

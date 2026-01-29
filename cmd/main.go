@@ -2,16 +2,20 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 
+	"github.com/diogoaguiar/hvac-manager/internal/database"
 	"github.com/diogoaguiar/hvac-manager/internal/homeassistant"
+	"github.com/diogoaguiar/hvac-manager/internal/integration"
 	"github.com/diogoaguiar/hvac-manager/internal/mqtt"
 	"github.com/diogoaguiar/hvac-manager/internal/state"
 )
@@ -86,6 +90,32 @@ func main() {
 
 	log.Printf("Config: Broker=%s, Device=%s", broker, deviceID)
 
+	// Database configuration
+	dbPath := getEnv("DATABASE_PATH", "./hvac.db")
+	modelID := getEnv("AC_MODEL_ID", "1109")
+	irBlasterID := getEnv("IR_BLASTER_ID", "ir-blaster")
+
+	// Initialize database
+	log.Println("📦 Initializing IR code database...")
+	db, err := database.New(dbPath)
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	// Run schema migrations
+	ctx := context.Background()
+	if err := db.Migrate(ctx); err != nil {
+		log.Fatalf("Failed to migrate database: %v", err)
+	}
+
+	// Load SmartIR IR codes for configured model
+	smartirFile := filepath.Join("docs", "smartir", "reference", fmt.Sprintf("%s_tuya.json", modelID))
+	if err := db.LoadFromJSON(ctx, modelID, smartirFile); err != nil {
+		log.Fatalf("Failed to load IR codes from %s: %v", smartirFile, err)
+	}
+	log.Printf("✅ Database ready with model: %s", modelID)
+
 	// Create MQTT client
 	mqttConfig := mqtt.Config{
 		Broker:   broker,
@@ -128,18 +158,20 @@ func main() {
 	// Subscribe to command topic
 	cmdTopic := fmt.Sprintf("homeassistant/climate/%s/set", deviceID)
 	if err := client.Subscribe(cmdTopic, 1, func(topic string, payload []byte) {
-		handleCommand(client, deviceID, acState, payload)
+		handleCommand(client, db, modelID, irBlasterID, deviceID, acState, payload)
 	}); err != nil {
 		log.Fatalf("Failed to subscribe to command topic: %v", err)
 	}
 
-	fmt.Println("\n✅ POC is running! Integration points:")
+	fmt.Println("\n✅ Phase 4 Integration Active!")
 	fmt.Printf("   📡 MQTT Broker: %s\n", broker)
 	fmt.Printf("   🏠 HA Device ID: %s\n", deviceID)
+	fmt.Printf("   🎛️  AC Model: %s\n", modelID)
+	fmt.Printf("   📡 IR Blaster: %s\n", irBlasterID)
 	fmt.Printf("   📥 Listening on: %s\n", cmdTopic)
 	fmt.Printf("   📤 State topic: homeassistant/climate/%s/state\n", deviceID)
-	fmt.Println("\nℹ️  This POC does NOT send IR signals - commands are logged only.")
-	fmt.Println("   Press Ctrl+C to stop\n")
+	fmt.Println("📡 IR codes will be transmitted via Zigbee2MQTT")
+	fmt.Println("   Press Ctrl+C to stop")
 
 	// Wait for interrupt signal
 	sigChan := make(chan os.Signal, 1)
@@ -193,7 +225,7 @@ func publishState(client *mqtt.Client, deviceID string, acState *state.ACState) 
 }
 
 // handleCommand processes commands received from Home Assistant
-func handleCommand(client *mqtt.Client, deviceID string, acState *state.ACState, payload []byte) {
+func handleCommand(client *mqtt.Client, db *database.DB, modelID, irBlasterID, deviceID string, acState *state.ACState, payload []byte) {
 	fmt.Println("\n" + strings.Repeat("─", 60))
 	log.Printf("📥 Received command: %s", string(payload))
 
@@ -221,8 +253,15 @@ func handleCommand(client *mqtt.Client, deviceID string, acState *state.ACState,
 		// Otherwise treat as mode or fan mode
 		if err := acState.SetMode(payloadStr); err == nil {
 			log.Printf("🔄 Mode set to: %s", payloadStr)
-			log.Printf("💡 [POC] Would look up IR code for: %s", acState.String())
-			log.Printf("💡 [POC] Would publish to: zigbee2mqtt/ir-blaster/set")
+
+			// Send IR code
+			ctx := context.Background()
+			if err := integration.SendIRCode(ctx, db, client, modelID, irBlasterID, acState); err != nil {
+				log.Printf("❌ Failed to send IR code: %v", err)
+			} else {
+				log.Printf("📡 IR code sent successfully")
+			}
+
 			if err := publishState(client, deviceID, acState); err != nil {
 				log.Printf("❌ Failed to publish state: %v", err)
 			}
@@ -232,8 +271,15 @@ func handleCommand(client *mqtt.Client, deviceID string, acState *state.ACState,
 
 		if err := acState.SetFanMode(payloadStr); err == nil {
 			log.Printf("💨 Fan mode set to: %s", payloadStr)
-			log.Printf("💡 [POC] Would look up IR code for: %s", acState.String())
-			log.Printf("💡 [POC] Would publish to: zigbee2mqtt/ir-blaster/set")
+
+			// Send IR code
+			ctx := context.Background()
+			if err := integration.SendIRCode(ctx, db, client, modelID, irBlasterID, acState); err != nil {
+				log.Printf("❌ Failed to send IR code: %v", err)
+			} else {
+				log.Printf("📡 IR code sent successfully")
+			}
+
 			if err := publishState(client, deviceID, acState); err != nil {
 				log.Printf("❌ Failed to publish state: %v", err)
 			}
@@ -284,9 +330,13 @@ func handleCommand(client *mqtt.Client, deviceID string, acState *state.ACState,
 		return
 	}
 
-	// Log what would be sent to IR blaster (POC - no actual IR sending)
-	log.Printf("💡 [POC] Would look up IR code for: %s", acState.String())
-	log.Printf("💡 [POC] Would publish to: zigbee2mqtt/ir-blaster/set")
+	// Send IR code to IR blaster
+	ctx := context.Background()
+	if err := integration.SendIRCode(ctx, db, client, modelID, irBlasterID, acState); err != nil {
+		log.Printf("❌ Failed to send IR code: %v", err)
+	} else {
+		log.Printf("📡 IR code sent successfully")
+	}
 
 	// Publish updated state back to Home Assistant
 	if err := publishState(client, deviceID, acState); err != nil {
