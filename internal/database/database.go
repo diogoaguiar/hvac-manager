@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"fmt"
 
+	"github.com/diogoaguiar/hvac-manager/internal/logger"
 	_ "modernc.org/sqlite" // Pure Go SQLite driver
 )
 
@@ -147,6 +148,8 @@ type IRCode struct {
 // LookupCode retrieves the IR code for a specific state
 // Returns sql.ErrNoRows if no matching code is found
 func (db *DB) LookupCode(ctx context.Context, modelID, mode string, temperature int, fanSpeed string) (string, error) {
+	logger.Debug("DB LookupCode: model=%s mode=%s temp=%d fan=%s", modelID, mode, temperature, fanSpeed)
+
 	var code string
 	query := `
 		SELECT ir_code 
@@ -156,17 +159,31 @@ func (db *DB) LookupCode(ctx context.Context, modelID, mode string, temperature 
 	err := db.conn.QueryRowContext(ctx, query, modelID, mode, temperature, fanSpeed).Scan(&code)
 	if err != nil {
 		if err == sql.ErrNoRows {
+			logger.Warn("No IR code found in DB for model=%s mode=%s temp=%d fan=%s",
+				modelID, mode, temperature, fanSpeed)
+
+			// Check if there are ANY codes for this combination (for debugging)
+			var count int
+			checkQuery := `SELECT COUNT(*) FROM ir_codes WHERE model_id = ? AND mode = ?`
+			db.conn.QueryRowContext(ctx, checkQuery, modelID, mode).Scan(&count)
+			logger.Debug("Found %d codes for model=%s mode=%s (any temp/fan)", count, modelID, mode)
+
 			return "", fmt.Errorf("no IR code found for model=%s mode=%s temp=%d fan=%s",
 				modelID, mode, temperature, fanSpeed)
 		}
+		logger.Error("Database query failed: %v", err)
 		return "", fmt.Errorf("database query failed: %w", err)
 	}
+
+	logger.Debug("Found IR code in DB (length: %d bytes)", len(code))
 	return code, nil
 }
 
 // LookupOffCode retrieves the "off" command IR code
 // Returns sql.ErrNoRows if no off code is found
 func (db *DB) LookupOffCode(ctx context.Context, modelID string) (string, error) {
+	logger.Debug("DB LookupOffCode: model=%s", modelID)
+
 	var code string
 	query := `
 		SELECT ir_code 
@@ -176,10 +193,14 @@ func (db *DB) LookupOffCode(ctx context.Context, modelID string) (string, error)
 	err := db.conn.QueryRowContext(ctx, query, modelID).Scan(&code)
 	if err != nil {
 		if err == sql.ErrNoRows {
+			logger.Warn("No off code found in DB for model=%s", modelID)
 			return "", fmt.Errorf("no off code found for model=%s", modelID)
 		}
+		logger.Error("Database query failed: %v", err)
 		return "", fmt.Errorf("database query failed: %w", err)
 	}
+
+	logger.Debug("Found off code in DB (length: %d bytes)", len(code))
 	return code, nil
 }
 

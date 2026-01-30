@@ -2,9 +2,9 @@ package mqtt
 
 import (
 	"fmt"
-	"log"
 	"time"
 
+	"github.com/diogoaguiar/hvac-manager/internal/logger"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
@@ -45,15 +45,15 @@ func NewClient(config Config) (*Client, error) {
 
 	// Connection handlers
 	opts.SetOnConnectHandler(func(c mqtt.Client) {
-		log.Println("MQTT: Connected to broker")
+		logger.Info("MQTT: Connected to broker")
 	})
 
 	opts.SetConnectionLostHandler(func(c mqtt.Client, err error) {
-		log.Printf("MQTT: Connection lost: %v", err)
+		logger.Error("MQTT: Connection lost: %v", err)
 	})
 
 	opts.SetReconnectingHandler(func(c mqtt.Client, opts *mqtt.ClientOptions) {
-		log.Println("MQTT: Reconnecting...")
+		logger.Warn("MQTT: Reconnecting...")
 	})
 
 	client := mqtt.NewClient(opts)
@@ -79,18 +79,27 @@ func (c *Client) Connect() error {
 // Disconnect closes the connection to the MQTT broker
 func (c *Client) Disconnect() {
 	c.client.Disconnect(250)
-	log.Println("MQTT: Disconnected from broker")
+	logger.Info("MQTT: Disconnected from broker")
 }
 
-// Publish sends a message to a topic
+// Publish sends a message to a topic with delivery tracking
 func (c *Client) Publish(topic string, qos byte, retained bool, payload interface{}) error {
+	logger.Debug("MQTT Publish: topic=%s qos=%d retained=%v", topic, qos, retained)
+
 	token := c.client.Publish(topic, qos, retained, payload)
+
+	// Wait for publish to complete
 	if !token.WaitTimeout(5 * time.Second) {
+		logger.Error("MQTT publish timeout for topic: %s", topic)
 		return fmt.Errorf("publish timeout")
 	}
+
 	if err := token.Error(); err != nil {
+		logger.Error("MQTT publish failed for topic %s: %v", topic, err)
 		return fmt.Errorf("publish failed: %w", err)
 	}
+
+	logger.Debug("MQTT publish successful: topic=%s", topic)
 	return nil
 }
 
@@ -108,7 +117,7 @@ func (c *Client) Subscribe(topic string, qos byte, handler MessageHandler) error
 		return fmt.Errorf("subscribe failed: %w", err)
 	}
 
-	log.Printf("MQTT: Subscribed to %s", topic)
+	logger.Info("MQTT: Subscribed to %s", topic)
 	return nil
 }
 

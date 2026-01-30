@@ -16,6 +16,7 @@ import (
 	"github.com/diogoaguiar/hvac-manager/internal/database"
 	"github.com/diogoaguiar/hvac-manager/internal/homeassistant"
 	"github.com/diogoaguiar/hvac-manager/internal/integration"
+	"github.com/diogoaguiar/hvac-manager/internal/logger"
 	"github.com/diogoaguiar/hvac-manager/internal/mqtt"
 	"github.com/diogoaguiar/hvac-manager/internal/state"
 )
@@ -34,7 +35,7 @@ func loadEnv() {
 	}
 	defer file.Close()
 
-	log.Println("📄 Loading .env file...")
+	fmt.Println("📄 Loading .env file...")
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -65,20 +66,24 @@ func loadEnv() {
 		// Set environment variable (overwrite if from .env)
 		os.Setenv(key, value)
 		if key == "MQTT_PASSWORD" {
-			log.Printf("   ✓ %s=***", key)
+			fmt.Printf("   ✓ %s=***\n", key)
 		} else {
-			log.Printf("   ✓ %s=%s", key, value)
+			fmt.Printf("   ✓ %s=%s\n", key, value)
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Printf("Warning: Error reading .env file: %v", err)
+		logger.Warn("Error reading .env file: %v", err)
 	}
 }
 
 func main() {
 	// Load .env file if it exists
 	loadEnv()
+
+	// Initialize logger from environment (LOG_LEVEL)
+	logger.InitFromEnv()
+
 	fmt.Println("🌡️  HVAC Manager - E2E POC")
 	fmt.Println("=" + string(make([]byte, 50)) + "=")
 
@@ -88,7 +93,7 @@ func main() {
 	username := getEnv("MQTT_USERNAME", "")
 	password := getEnv("MQTT_PASSWORD", "")
 
-	log.Printf("Config: Broker=%s, Device=%s", broker, deviceID)
+	logger.Info("Config: Broker=%s, Device=%s", broker, deviceID)
 
 	// Database configuration
 	dbPath := getEnv("DATABASE_PATH", "./hvac.db")
@@ -96,7 +101,7 @@ func main() {
 	irBlasterID := getEnv("IR_BLASTER_ID", "ir-blaster")
 
 	// Initialize database
-	log.Println("📦 Initializing IR code database...")
+	logger.Info("📦 Initializing IR code database...")
 	db, err := database.New(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
@@ -114,7 +119,7 @@ func main() {
 	if err := db.LoadFromJSON(ctx, modelID, smartirFile); err != nil {
 		log.Fatalf("Failed to load IR codes from %s: %v", smartirFile, err)
 	}
-	log.Printf("✅ Database ready with model: %s", modelID)
+	logger.Info("✅ Database ready with model: %s", modelID)
 
 	// Create MQTT client
 	mqttConfig := mqtt.Config{
@@ -137,7 +142,7 @@ func main() {
 
 	// Initialize AC state
 	acState := state.NewACState()
-	log.Printf("Initial state: %s", acState.String())
+	logger.Info("Initial state: %s", acState.String())
 
 	// Publish Home Assistant MQTT Discovery
 	if err := publishDiscovery(client, deviceID); err != nil {
@@ -147,12 +152,12 @@ func main() {
 	// Publish availability (online)
 	availTopic := fmt.Sprintf("homeassistant/climate/%s/availability", deviceID)
 	if err := client.Publish(availTopic, 1, true, "online"); err != nil {
-		log.Printf("Warning: Failed to publish availability: %v", err)
+		logger.Warn("Failed to publish availability: %v", err)
 	}
 
 	// Publish initial state
 	if err := publishState(client, deviceID, acState); err != nil {
-		log.Printf("Warning: Failed to publish initial state: %v", err)
+		logger.Warn("Failed to publish initial state: %v", err)
 	}
 
 	// Subscribe to command topic
@@ -178,10 +183,10 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
 
-	log.Println("\n🛑 Shutting down...")
+	logger.Info("\n🛑 Shutting down...")
 	// Publish offline status
 	if err := client.Publish(availTopic, 1, true, "offline"); err != nil {
-		log.Printf("Warning: Failed to publish offline status: %v", err)
+		logger.Warn("Failed to publish offline status: %v", err)
 	}
 }
 
@@ -198,7 +203,7 @@ func publishDiscovery(client *mqtt.Client, deviceID string) error {
 		return fmt.Errorf("failed to publish discovery: %w", err)
 	}
 
-	log.Printf("✅ Published discovery to: %s", topic)
+	logger.Info("✅ Published discovery to: %s", topic)
 	return nil
 }
 
@@ -220,31 +225,40 @@ func publishState(client *mqtt.Client, deviceID string, acState *state.ACState) 
 		return fmt.Errorf("failed to publish state: %w", err)
 	}
 
-	log.Printf("📤 Published state: %s", acState.String())
+	logger.Debug("📤 Published state: %s", acState.String())
 	return nil
 }
 
 // handleCommand processes commands received from Home Assistant
 func handleCommand(client *mqtt.Client, db *database.DB, modelID, irBlasterID, deviceID string, acState *state.ACState, payload []byte) {
 	fmt.Println("\n" + strings.Repeat("─", 60))
-	log.Printf("📥 Received command: %s", string(payload))
+	logger.Info("📥 Received command: %s", string(payload))
 
 	// Try to parse as JSON first
 	cmd, err := homeassistant.ParseCommand(payload)
 	if err != nil {
 		// If JSON parsing fails, treat as plain text (temperature or mode value)
 		payloadStr := string(payload)
-		log.Printf("📋 Plain text command: %s", payloadStr)
+		logger.Debug("📋 Plain text command: %s", payloadStr)
 
 		// Try to parse as temperature (numeric)
 		if temp, err := strconv.ParseFloat(payloadStr, 64); err == nil {
 			if err := acState.SetTemperature(temp); err != nil {
-				log.Printf("❌ Invalid temperature: %v", err)
+				logger.Error("Invalid temperature: %v", err)
 				return
 			}
-			log.Printf("🌡️  Temperature set to: %.1f°C", temp)
+			logger.Info("🌡️  Temperature set to: %.1f°C", temp)
+
+			// BUGFIX: Send IR code for temperature changes!
+			ctx := context.Background()
+			if err := integration.SendIRCode(ctx, db, client, modelID, irBlasterID, acState); err != nil {
+				logger.Error("Failed to send IR code: %v", err)
+			} else {
+				logger.Info("📡 IR code sent successfully")
+			}
+
 			if err := publishState(client, deviceID, acState); err != nil {
-				log.Printf("❌ Failed to publish state: %v", err)
+				logger.Error("Failed to publish state: %v", err)
 			}
 			fmt.Println(strings.Repeat("─", 60))
 			return
@@ -252,95 +266,95 @@ func handleCommand(client *mqtt.Client, db *database.DB, modelID, irBlasterID, d
 
 		// Otherwise treat as mode or fan mode
 		if err := acState.SetMode(payloadStr); err == nil {
-			log.Printf("🔄 Mode set to: %s", payloadStr)
+			logger.Info("🔄 Mode set to: %s", payloadStr)
 
 			// Send IR code
 			ctx := context.Background()
 			if err := integration.SendIRCode(ctx, db, client, modelID, irBlasterID, acState); err != nil {
-				log.Printf("❌ Failed to send IR code: %v", err)
+				logger.Error("Failed to send IR code: %v", err)
 			} else {
-				log.Printf("📡 IR code sent successfully")
+				logger.Info("📡 IR code sent successfully")
 			}
 
 			if err := publishState(client, deviceID, acState); err != nil {
-				log.Printf("❌ Failed to publish state: %v", err)
+				logger.Error("Failed to publish state: %v", err)
 			}
 			fmt.Println(strings.Repeat("─", 60))
 			return
 		}
 
 		if err := acState.SetFanMode(payloadStr); err == nil {
-			log.Printf("💨 Fan mode set to: %s", payloadStr)
+			logger.Info("💨 Fan mode set to: %s", payloadStr)
 
 			// Send IR code
 			ctx := context.Background()
 			if err := integration.SendIRCode(ctx, db, client, modelID, irBlasterID, acState); err != nil {
-				log.Printf("❌ Failed to send IR code: %v", err)
+				logger.Error("Failed to send IR code: %v", err)
 			} else {
-				log.Printf("📡 IR code sent successfully")
+				logger.Info("📡 IR code sent successfully")
 			}
 
 			if err := publishState(client, deviceID, acState); err != nil {
-				log.Printf("❌ Failed to publish state: %v", err)
+				logger.Error("Failed to publish state: %v", err)
 			}
 			fmt.Println(strings.Repeat("─", 60))
 			return
 		}
 
-		log.Printf("❌ Could not parse command as JSON or plain text: %s", payloadStr)
+		logger.Error("Could not parse command as JSON or plain text: %s", payloadStr)
 		return
 	}
 
 	// Pretty print the command for visibility
 	cmdJSON, _ := json.MarshalIndent(cmd, "", "  ")
-	log.Printf("📋 Parsed command:\n%s", string(cmdJSON))
+	logger.Debug("📋 Parsed command:\n%s", string(cmdJSON))
 
 	// Apply changes to state
 	stateChanged := false
 
 	if cmd.Temperature != nil {
 		if err := acState.SetTemperature(*cmd.Temperature); err != nil {
-			log.Printf("❌ Invalid temperature: %v", err)
+			logger.Error("Invalid temperature: %v", err)
 			return
 		}
 		stateChanged = true
-		log.Printf("🌡️  Temperature set to: %.1f°C", *cmd.Temperature)
+		logger.Info("🌡️  Temperature set to: %.1f°C", *cmd.Temperature)
 	}
 
 	if cmd.Mode != nil {
 		if err := acState.SetMode(*cmd.Mode); err != nil {
-			log.Printf("❌ Invalid mode: %v", err)
+			logger.Error("Invalid mode: %v", err)
 			return
 		}
 		stateChanged = true
-		log.Printf("🔄 Mode set to: %s", *cmd.Mode)
+		logger.Info("🔄 Mode set to: %s", *cmd.Mode)
 	}
 
 	if cmd.FanMode != nil {
 		if err := acState.SetFanMode(*cmd.FanMode); err != nil {
-			log.Printf("❌ Invalid fan mode: %v", err)
+			logger.Error("Invalid fan mode: %v", err)
 			return
 		}
 		stateChanged = true
-		log.Printf("💨 Fan mode set to: %s", *cmd.FanMode)
+		logger.Info("💨 Fan mode set to: %s", *cmd.FanMode)
 	}
 
 	if !stateChanged {
-		log.Println("⚠️  No valid state changes in command")
+		logger.Warn("⚠️  No valid state changes in command")
 		return
 	}
 
 	// Send IR code to IR blaster
 	ctx := context.Background()
 	if err := integration.SendIRCode(ctx, db, client, modelID, irBlasterID, acState); err != nil {
-		log.Printf("❌ Failed to send IR code: %v", err)
+		logger.Error("Failed to send IR code: %v", err)
 	} else {
-		log.Printf("📡 IR code sent successfully")
+		logger.Info("📡 IR code sent successfully")
 	}
 
 	// Publish updated state back to Home Assistant
 	if err := publishState(client, deviceID, acState); err != nil {
-		log.Printf("❌ Failed to publish state: %v", err)
+		logger.Error("Failed to publish state: %v", err)
 	}
 
 	fmt.Println(strings.Repeat("─", 60))

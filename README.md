@@ -150,6 +150,7 @@ SmartIR databases use **Broadlink format** (`JgB...`), but our ZS06 hardware req
 ### For Developers
 - [📐 Architecture](docs/architecture.md) - System design, data flow, and component interactions
 - [🔧 Development Guide](docs/development.md) - Setup, building, testing, and contributing
+- [🐛 Debugging Guide](docs/debugging.md) - Log levels and troubleshooting
 - [📡 API & MQTT](docs/api.md) - MQTT topics, message formats, and HA integration
 - [🔢 Protocols](docs/protocols.md) - Daikin protocol and Tuya encoding details
 - [📝 IR Code Preparation](docs/ir-code-prep.md) - Converting SmartIR codes to Tuya format
@@ -188,7 +189,13 @@ go run cmd/main.go
 #    Climate entity auto-discovers: Settings → Devices & Services → MQTT
 ```
 
-**📖 [Complete Setup Guide](docs/poc-setup.md)** - Full instructions with troubleshooting
+**� Debugging Tip:** Set `LOG_LEVEL=DEBUG` to see detailed IR codes, database queries, and MQTT messages:
+```bash
+LOG_LEVEL=DEBUG go run cmd/main.go
+```
+See [Debugging Guide](docs/debugging.md) for full troubleshooting details.
+
+**�📖 [Complete Setup Guide](docs/poc-setup.md)** - Full instructions with troubleshooting
 
 ### Testing Without Hardware
 
