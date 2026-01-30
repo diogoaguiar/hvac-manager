@@ -14,6 +14,9 @@ type ClimateDiscovery struct {
 	TemperatureCommandTopic  string   `json:"temperature_command_topic"`
 	ModeCommandTopic         string   `json:"mode_command_topic"`
 	FanModeCommandTopic      string   `json:"fan_mode_command_topic"`
+	TemperatureStateTopic    string   `json:"temperature_state_topic"`
+	ModeStateTopic           string   `json:"mode_state_topic"`
+	FanModeStateTopic        string   `json:"fan_mode_state_topic"`
 	TemperatureStateTemplate string   `json:"temperature_state_template"`
 	ModeStateTemplate        string   `json:"mode_state_template"`
 	FanModeStateTemplate     string   `json:"fan_mode_state_template"`
@@ -40,13 +43,19 @@ type Device struct {
 // NewClimateDiscovery creates a new MQTT Discovery payload for a climate entity
 func NewClimateDiscovery(deviceID string, deviceName string) *ClimateDiscovery {
 	cmdTopic := fmt.Sprintf("homeassistant/climate/%s/set", deviceID)
+	stateTopic := fmt.Sprintf("homeassistant/climate/%s/state", deviceID)
 	return &ClimateDiscovery{
-		Name:                     deviceName,
-		UniqueID:                 fmt.Sprintf("hvac_manager_%s", deviceID),
-		StateTopic:               fmt.Sprintf("homeassistant/climate/%s/state", deviceID),
-		TemperatureCommandTopic:  cmdTopic,
-		ModeCommandTopic:         cmdTopic,
-		FanModeCommandTopic:      cmdTopic,
+		Name:                    deviceName,
+		UniqueID:                fmt.Sprintf("hvac_manager_%s", deviceID),
+		StateTopic:              stateTopic,
+		TemperatureCommandTopic: cmdTopic,
+		ModeCommandTopic:        cmdTopic,
+		FanModeCommandTopic:     cmdTopic,
+		// Separate state topics for each attribute (HA reads from single JSON state)
+		TemperatureStateTopic: stateTopic,
+		ModeStateTopic:        stateTopic,
+		FanModeStateTopic:     stateTopic,
+		// Templates to extract from JSON
 		TemperatureStateTemplate: "{{ value_json.temperature }}",
 		ModeStateTemplate:        "{{ value_json.mode }}",
 		FanModeStateTemplate:     "{{ value_json.fan_mode }}",

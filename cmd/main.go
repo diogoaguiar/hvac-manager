@@ -221,11 +221,15 @@ func publishState(client *mqtt.Client, deviceID string, acState *state.ACState) 
 	}
 
 	topic := fmt.Sprintf("homeassistant/climate/%s/state", deviceID)
+	
+	// Log what we're about to publish
+	logger.Info("📤 Publishing HA state to: %s", topic)
+	logger.Info("   JSON: %s", string(payload))
+	
 	if err := client.Publish(topic, 0, true, payload); err != nil {
 		return fmt.Errorf("failed to publish state: %w", err)
 	}
 
-	logger.Debug("📤 Published state: %s", acState.String())
 	return nil
 }
 
@@ -243,20 +247,27 @@ func handleCommand(client *mqtt.Client, db *database.DB, modelID, irBlasterID, d
 
 		// Try to parse as temperature (numeric)
 		if temp, err := strconv.ParseFloat(payloadStr, 64); err == nil {
+			// Save original state before modification
+			originalTemp := acState.Temperature
+
 			if err := acState.SetTemperature(temp); err != nil {
 				logger.Error("Invalid temperature: %v", err)
 				return
 			}
 			logger.Info("🌡️  Temperature set to: %.1f°C", temp)
 
-			// BUGFIX: Send IR code for temperature changes!
+			// Try to send IR code
 			ctx := context.Background()
 			if err := integration.SendIRCode(ctx, db, client, modelID, irBlasterID, acState); err != nil {
-				logger.Error("Failed to send IR code: %v", err)
+				logger.Error("❌ Failed to send IR code: %v", err)
+				// Revert to original state on failure
+				acState.Temperature = originalTemp
+				logger.Warn("⏪ Reverted temperature to: %.1f°C", originalTemp)
 			} else {
-				logger.Info("📡 IR code sent successfully")
+				logger.Info("✅ IR code sent successfully")
 			}
 
+			// Always publish actual state (new if success, reverted if failure)
 			if err := publishState(client, deviceID, acState); err != nil {
 				logger.Error("Failed to publish state: %v", err)
 			}
@@ -265,17 +276,22 @@ func handleCommand(client *mqtt.Client, db *database.DB, modelID, irBlasterID, d
 		}
 
 		// Otherwise treat as mode or fan mode
+		originalMode := acState.Mode
 		if err := acState.SetMode(payloadStr); err == nil {
 			logger.Info("🔄 Mode set to: %s", payloadStr)
 
-			// Send IR code
+			// Try to send IR code
 			ctx := context.Background()
 			if err := integration.SendIRCode(ctx, db, client, modelID, irBlasterID, acState); err != nil {
-				logger.Error("Failed to send IR code: %v", err)
+				logger.Error("❌ Failed to send IR code: %v", err)
+				// Revert to original state on failure
+				acState.Mode = originalMode
+				logger.Warn("⏪ Reverted mode to: %s", originalMode)
 			} else {
-				logger.Info("📡 IR code sent successfully")
+				logger.Info("✅ IR code sent successfully")
 			}
 
+			// Always publish actual state (new if success, reverted if failure)
 			if err := publishState(client, deviceID, acState); err != nil {
 				logger.Error("Failed to publish state: %v", err)
 			}
@@ -283,17 +299,22 @@ func handleCommand(client *mqtt.Client, db *database.DB, modelID, irBlasterID, d
 			return
 		}
 
+		originalFan := acState.FanMode
 		if err := acState.SetFanMode(payloadStr); err == nil {
 			logger.Info("💨 Fan mode set to: %s", payloadStr)
 
-			// Send IR code
+			// Try to send IR code
 			ctx := context.Background()
 			if err := integration.SendIRCode(ctx, db, client, modelID, irBlasterID, acState); err != nil {
-				logger.Error("Failed to send IR code: %v", err)
+				logger.Error("❌ Failed to send IR code: %v", err)
+				// Revert to original state on failure
+				acState.FanMode = originalFan
+				logger.Warn("⏪ Reverted fan mode to: %s", originalFan)
 			} else {
-				logger.Info("📡 IR code sent successfully")
+				logger.Info("✅ IR code sent successfully")
 			}
 
+			// Always publish actual state (new if success, reverted if failure)
 			if err := publishState(client, deviceID, acState); err != nil {
 				logger.Error("Failed to publish state: %v", err)
 			}
@@ -308,6 +329,13 @@ func handleCommand(client *mqtt.Client, db *database.DB, modelID, irBlasterID, d
 	// Pretty print the command for visibility
 	cmdJSON, _ := json.MarshalIndent(cmd, "", "  ")
 	logger.Debug("📋 Parsed command:\n%s", string(cmdJSON))
+
+	// Save original state before any modifications
+	originalState := state.ACState{
+		Temperature: acState.Temperature,
+		Mode:        acState.Mode,
+		FanMode:     acState.FanMode,
+	}
 
 	// Apply changes to state
 	stateChanged := false
@@ -344,15 +372,20 @@ func handleCommand(client *mqtt.Client, db *database.DB, modelID, irBlasterID, d
 		return
 	}
 
-	// Send IR code to IR blaster
+	// Try to send IR code to IR blaster
 	ctx := context.Background()
 	if err := integration.SendIRCode(ctx, db, client, modelID, irBlasterID, acState); err != nil {
-		logger.Error("Failed to send IR code: %v", err)
+		logger.Error("❌ Failed to send IR code: %v", err)
+		// Revert to original state on failure
+		acState.Temperature = originalState.Temperature
+		acState.Mode = originalState.Mode
+		acState.FanMode = originalState.FanMode
+		logger.Warn("⏪ Reverted to original state: %s", originalState.String())
 	} else {
-		logger.Info("📡 IR code sent successfully")
+		logger.Info("✅ IR code sent successfully")
 	}
 
-	// Publish updated state back to Home Assistant
+	// Always publish actual state (new if success, reverted if failure)
 	if err := publishState(client, deviceID, acState); err != nil {
 		logger.Error("Failed to publish state: %v", err)
 	}
