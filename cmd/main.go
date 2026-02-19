@@ -221,11 +221,11 @@ func publishState(client *mqtt.Client, deviceID string, acState *state.ACState) 
 	}
 
 	topic := fmt.Sprintf("homeassistant/climate/%s/state", deviceID)
-	
+
 	// Log what we're about to publish
 	logger.Info("📤 Publishing HA state to: %s", topic)
 	logger.Info("   JSON: %s", string(payload))
-	
+
 	if err := client.Publish(topic, 0, true, payload); err != nil {
 		return fmt.Errorf("failed to publish state: %w", err)
 	}

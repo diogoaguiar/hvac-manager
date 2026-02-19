@@ -145,11 +145,77 @@ type IRCode struct {
 	IRCode      string  // Base64-encoded Tuya format code
 }
 
-// LookupCode retrieves the IR code for a specific state
-// Returns sql.ErrNoRows if no matching code is found
+// LookupCode retrieves the IR code for a specific state with intelligent fallback
+// Priority order:
+// 1. Exact match (mode + temp + fan)
+// 2. Mode + temp (ignore fan) - for heat/cool/auto modes
+// 3. Fan fallback: auto → low → medium → high
+// 4. Mode only (ignore temp + fan) - for fan_only/dry modes
 func (db *DB) LookupCode(ctx context.Context, modelID, mode string, temperature int, fanSpeed string) (string, error) {
 	logger.Debug("DB LookupCode: model=%s mode=%s temp=%d fan=%s", modelID, mode, temperature, fanSpeed)
 
+	// Try exact match first
+	code, err := db.lookupExact(ctx, modelID, mode, temperature, fanSpeed)
+	if err == nil {
+		logger.Info("✓ Exact match: mode=%s temp=%d fan=%s", mode, temperature, fanSpeed)
+		return code, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", err // Database error, not just missing data
+	}
+
+	logger.Debug("Exact match failed, trying fallback strategies...")
+
+	// Determine if temperature is required for this mode
+	tempRequired := mode == "heat" || mode == "cool" || mode == "auto"
+
+	// Strategy 1: Try different fan speeds (if fan was specified)
+	if fanSpeed != "" {
+		fanFallbacks := getFanFallbacks(fanSpeed)
+		for _, fallbackFan := range fanFallbacks {
+			code, err := db.lookupExact(ctx, modelID, mode, temperature, fallbackFan)
+			if err == nil {
+				logger.Info("✓ Fan fallback: mode=%s temp=%d fan=%s (requested: %s)",
+					mode, temperature, fallbackFan, fanSpeed)
+				return code, nil
+			}
+		}
+	}
+
+	// Strategy 2: Try ignoring fan speed (mode + temp only)
+	if tempRequired {
+		code, err := db.lookupModeTemp(ctx, modelID, mode, temperature)
+		if err == nil {
+			logger.Info("✓ Mode+temp match: mode=%s temp=%d (ignoring fan)", mode, temperature)
+			return code, nil
+		}
+	}
+
+	// Strategy 3: Try mode only (ignore temp + fan) for modes that don't require temp
+	if !tempRequired {
+		code, err := db.lookupModeOnly(ctx, modelID, mode)
+		if err == nil {
+			logger.Info("✓ Mode-only match: mode=%s (ignoring temp/fan)", mode)
+			return code, nil
+		}
+	}
+
+	// All strategies failed
+	logger.Warn("⚠️  No IR code found for model=%s mode=%s temp=%d fan=%s (tried all fallbacks)",
+		modelID, mode, temperature, fanSpeed)
+
+	// Debug info: show what's available
+	var count int
+	checkQuery := `SELECT COUNT(*) FROM ir_codes WHERE model_id = ? AND mode = ?`
+	db.conn.QueryRowContext(ctx, checkQuery, modelID, mode).Scan(&count)
+	logger.Debug("Found %d codes for model=%s mode=%s (any temp/fan)", count, modelID, mode)
+
+	return "", fmt.Errorf("no IR code found for model=%s mode=%s temp=%d fan=%s",
+		modelID, mode, temperature, fanSpeed)
+}
+
+// lookupExact performs exact match query
+func (db *DB) lookupExact(ctx context.Context, modelID, mode string, temperature int, fanSpeed string) (string, error) {
 	var code string
 	query := `
 		SELECT ir_code 
@@ -157,26 +223,52 @@ func (db *DB) LookupCode(ctx context.Context, modelID, mode string, temperature 
 		WHERE model_id = ? AND mode = ? AND temperature = ? AND fan_speed = ?
 	`
 	err := db.conn.QueryRowContext(ctx, query, modelID, mode, temperature, fanSpeed).Scan(&code)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			logger.Warn("No IR code found in DB for model=%s mode=%s temp=%d fan=%s",
-				modelID, mode, temperature, fanSpeed)
+	if err == nil {
+		logger.Debug("Found IR code in DB (length: %d bytes)", len(code))
+	}
+	return code, err
+}
 
-			// Check if there are ANY codes for this combination (for debugging)
-			var count int
-			checkQuery := `SELECT COUNT(*) FROM ir_codes WHERE model_id = ? AND mode = ?`
-			db.conn.QueryRowContext(ctx, checkQuery, modelID, mode).Scan(&count)
-			logger.Debug("Found %d codes for model=%s mode=%s (any temp/fan)", count, modelID, mode)
+// lookupModeTemp tries to find code matching mode + temperature (any fan speed)
+func (db *DB) lookupModeTemp(ctx context.Context, modelID, mode string, temperature int) (string, error) {
+	var code string
+	query := `
+		SELECT ir_code 
+		FROM ir_codes 
+		WHERE model_id = ? AND mode = ? AND temperature = ?
+		LIMIT 1
+	`
+	err := db.conn.QueryRowContext(ctx, query, modelID, mode, temperature).Scan(&code)
+	return code, err
+}
 
-			return "", fmt.Errorf("no IR code found for model=%s mode=%s temp=%d fan=%s",
-				modelID, mode, temperature, fanSpeed)
+// lookupModeOnly tries to find code matching mode only (any temp/fan)
+func (db *DB) lookupModeOnly(ctx context.Context, modelID, mode string) (string, error) {
+	var code string
+	query := `
+		SELECT ir_code 
+		FROM ir_codes 
+		WHERE model_id = ? AND mode = ?
+		LIMIT 1
+	`
+	err := db.conn.QueryRowContext(ctx, query, modelID, mode).Scan(&code)
+	return code, err
+}
+
+// getFanFallbacks returns alternative fan speeds to try
+// Order: current speed is removed, then try: low → medium → high → auto
+func getFanFallbacks(requestedFan string) []string {
+	allFans := []string{"low", "medium", "high", "auto"}
+	fallbacks := []string{}
+
+	// Add all fan speeds except the one already tried
+	for _, fan := range allFans {
+		if fan != requestedFan {
+			fallbacks = append(fallbacks, fan)
 		}
-		logger.Error("Database query failed: %v", err)
-		return "", fmt.Errorf("database query failed: %w", err)
 	}
 
-	logger.Debug("Found IR code in DB (length: %d bytes)", len(code))
-	return code, nil
+	return fallbacks
 }
 
 // LookupOffCode retrieves the "off" command IR code
@@ -261,4 +353,20 @@ func (db *DB) ListModels(ctx context.Context) ([]string, error) {
 // Ping verifies the database connection is alive
 func (db *DB) Ping(ctx context.Context) error {
 	return db.conn.PingContext(ctx)
+}
+
+// InsertCode inserts a single IR code into the database (for testing)
+func (db *DB) InsertCode(ctx context.Context, code *IRCode) error {
+	query := `
+		INSERT INTO ir_codes (model_id, mode, temperature, fan_speed, ir_code)
+		VALUES (?, ?, ?, ?, ?)
+	`
+	_, err := db.conn.ExecContext(ctx, query,
+		code.ModelID,
+		code.Mode,
+		code.Temperature,
+		code.FanSpeed,
+		code.IRCode,
+	)
+	return err
 }
